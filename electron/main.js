@@ -1,9 +1,6 @@
 const { app, BrowserWindow, globalShortcut, Tray, Menu, ipcMain, nativeImage } = require('electron');
 const path = require('path');
-const Screenshots = require('electron-screenshots').default;
 const fs = require('fs');
-const FormData = require('form-data');
-const fetch = require('node-fetch');
 
 let mainWindow;
 let tray;
@@ -88,23 +85,39 @@ function createTray() {
   });
 }
 
-function initScreenshots() {
-  screenshots = new Screenshots({
-    singleWindow: true,
-  });
+async function initScreenshots() {
+  try {
+    const Screenshots = require('electron-screenshots');
+    const ScreenshotsClass = Screenshots.default || Screenshots;
 
-  screenshots.on('ok', (e, buffer, bounds) => {
-    saveScreenshot(buffer, bounds);
-  });
+    screenshots = new ScreenshotsClass({
+      singleWindow: true,
+    });
 
-  screenshots.on('cancel', () => {
-    console.log('Screenshot cancelled');
-  });
+    screenshots.on('ok', (e, buffer, bounds) => {
+      saveScreenshot(buffer, bounds);
+    });
+
+    screenshots.on('cancel', () => {
+      console.log('Screenshot cancelled');
+    });
+
+    console.log('Screenshots module initialized successfully');
+  } catch (error) {
+    console.error('Failed to initialize screenshots:', error);
+    console.log('Screenshot functionality will be disabled');
+  }
 }
 
 async function takeScreenshot() {
   if (screenshots) {
-    screenshots.startCapture();
+    try {
+      screenshots.startCapture();
+    } catch (error) {
+      console.error('Error taking screenshot:', error);
+    }
+  } else {
+    console.warn('Screenshots module not initialized');
   }
 }
 
@@ -163,10 +176,10 @@ function registerGlobalShortcuts() {
   console.log('- Ctrl+Shift+A: Show app');
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   createWindow();
   createTray();
-  initScreenshots();
+  await initScreenshots();
   registerGlobalShortcuts();
 
   app.on('activate', () => {
