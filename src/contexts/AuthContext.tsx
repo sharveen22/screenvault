@@ -1,125 +1,103 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { User, Session, AuthError } from '@supabase/supabase-js';
-import { supabase, UserExtended } from '../lib/supabase';
+import { isElectron, UserExtended } from '../lib/database';
+
+interface User {
+  id: string;
+  email: string;
+}
 
 interface AuthContextType {
   user: User | null;
-  session: Session | null;
   userProfile: UserExtended | null;
   loading: boolean;
-  signUp: (email: string, password: string) => Promise<{ error: AuthError | null }>;
-  signIn: (email: string, password: string) => Promise<{ error: AuthError | null }>;
+  signUp: (email: string, password: string) => Promise<{ error: string | null }>;
+  signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
-  signInWithGoogle: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
   const [userProfile, setUserProfile] = useState<UserExtended | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        loadUserProfile(session.user.id);
-      } else {
-        setLoading(false);
-      }
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      (() => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        if (session?.user) {
-          loadUserProfile(session.user.id);
-        } else {
-          setUserProfile(null);
-          setLoading(false);
-        }
-      })();
-    });
-
-    return () => subscription.unsubscribe();
+    checkSession();
   }, []);
 
-  const loadUserProfile = async (userId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('users_extended')
-        .select('*')
-        .eq('id', userId)
-        .maybeSingle();
-
-      if (error) throw error;
-
-      if (!data) {
-        const { error: insertError } = await supabase
-          .from('users_extended')
-          .insert([{ id: userId }]);
-
-        if (insertError) throw insertError;
-
-        const { data: newData } = await supabase
-          .from('users_extended')
-          .select('*')
-          .eq('id', userId)
-          .maybeSingle();
-
-        setUserProfile(newData);
-      } else {
-        setUserProfile(data);
+  const checkSession = async () => {
+    if (isElectron) {
+      try {
+        const { user: currentUser } = await window.electronAPI!.auth.getSession();
+        if (currentUser) {
+          setUser({ id: currentUser.id, email: currentUser.email });
+          setUserProfile(currentUser);
+        }
+      } catch (error) {
+        console.error('Error checking session:', error);
       }
-    } catch (error) {
-      console.error('Error loading user profile:', error);
-    } finally {
-      setLoading(false);
     }
+    setLoading(false);
   };
 
   const signUp = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-    });
-    return { error };
+    if (!isElectron) {
+      return { error: 'Desktop app only' };
+    }
+
+    try {
+      const { user: newUser, error } = await window.electronAPI!.auth.signUp(email, password);
+
+      if (error) {
+        return { error };
+      }
+
+      setUser({ id: newUser.id, email: newUser.email });
+      setUserProfile(newUser);
+
+      return { error: null };
+    } catch (error: any) {
+      return { error: error.message };
+    }
   };
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    return { error };
+    if (!isElectron) {
+      return { error: 'Desktop app only' };
+    }
+
+    try {
+      const { user: currentUser, error } = await window.electronAPI!.auth.signIn(email, password);
+
+      if (error) {
+        return { error };
+      }
+
+      setUser({ id: currentUser.id, email: currentUser.email });
+      setUserProfile(currentUser);
+
+      return { error: null };
+    } catch (error: any) {
+      return { error: error.message };
+    }
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
-  };
-
-  const signInWithGoogle = async () => {
-    await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: window.location.origin,
-      },
-    });
+    if (isElectron) {
+      await window.electronAPI!.auth.signOut();
+    }
+    setUser(null);
+    setUserProfile(null);
   };
 
   const value = {
     user,
-    session,
     userProfile,
     loading,
     signUp,
     signIn,
     signOut,
-    signInWithGoogle,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

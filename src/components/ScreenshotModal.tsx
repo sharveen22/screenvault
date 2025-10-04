@@ -1,16 +1,15 @@
-import { useState } from 'react';
-import { Screenshot, supabase } from '../lib/supabase';
+import { useState, useEffect } from 'react';
+import { Screenshot, db } from '../lib/database';
 import {
   X,
   Download,
   Star,
   Tag,
   FileText,
-  Calendar,
   Monitor,
-  Maximize2,
   Share2,
   Trash2,
+  Image as ImageIcon,
 } from 'lucide-react';
 
 interface ScreenshotModalProps {
@@ -23,19 +22,23 @@ export function ScreenshotModal({ screenshot, onClose, onUpdate }: ScreenshotMod
   const [notes, setNotes] = useState(screenshot.user_notes);
   const [newTag, setNewTag] = useState('');
   const [isFavorite, setIsFavorite] = useState(screenshot.is_favorite);
+  const [imageUrl, setImageUrl] = useState<string>('');
 
-  const getImageUrl = () => {
-    const { data } = supabase.storage
-      .from('screenshots')
-      .getPublicUrl(screenshot.storage_path);
-    return data.publicUrl;
+  useEffect(() => {
+    loadImage();
+  }, [screenshot.storage_path]);
+
+  const loadImage = async () => {
+    const { data } = await window.electronAPI!.file.read(screenshot.storage_path);
+    setImageUrl(`data:image/png;base64,${data}`);
   };
 
   const toggleFavorite = async () => {
-    const { error } = await supabase
+    const { error } = await db
       .from('screenshots')
       .update({ is_favorite: !isFavorite })
-      .eq('id', screenshot.id);
+      .eq('id', screenshot.id)
+      .select();
 
     if (!error) {
       setIsFavorite(!isFavorite);
@@ -44,10 +47,11 @@ export function ScreenshotModal({ screenshot, onClose, onUpdate }: ScreenshotMod
   };
 
   const saveNotes = async () => {
-    const { error } = await supabase
+    const { error } = await db
       .from('screenshots')
       .update({ user_notes: notes })
-      .eq('id', screenshot.id);
+      .eq('id', screenshot.id)
+      .select();
 
     if (!error) {
       onUpdate();
@@ -58,10 +62,11 @@ export function ScreenshotModal({ screenshot, onClose, onUpdate }: ScreenshotMod
     if (!newTag.trim()) return;
 
     const updatedTags = [...screenshot.custom_tags, newTag.trim()];
-    const { error } = await supabase
+    const { error } = await db
       .from('screenshots')
       .update({ custom_tags: updatedTags })
-      .eq('id', screenshot.id);
+      .eq('id', screenshot.id)
+      .select();
 
     if (!error) {
       screenshot.custom_tags = updatedTags;
@@ -72,10 +77,11 @@ export function ScreenshotModal({ screenshot, onClose, onUpdate }: ScreenshotMod
 
   const removeTag = async (tagToRemove: string) => {
     const updatedTags = screenshot.custom_tags.filter((tag) => tag !== tagToRemove);
-    const { error } = await supabase
+    const { error } = await db
       .from('screenshots')
       .update({ custom_tags: updatedTags })
-      .eq('id', screenshot.id);
+      .eq('id', screenshot.id)
+      .select();
 
     if (!error) {
       screenshot.custom_tags = updatedTags;
@@ -85,7 +91,7 @@ export function ScreenshotModal({ screenshot, onClose, onUpdate }: ScreenshotMod
 
   const downloadScreenshot = () => {
     const link = document.createElement('a');
-    link.href = getImageUrl();
+    link.href = imageUrl;
     link.download = screenshot.file_name;
     link.click();
   };
@@ -93,8 +99,7 @@ export function ScreenshotModal({ screenshot, onClose, onUpdate }: ScreenshotMod
   const deleteScreenshot = async () => {
     if (!confirm('Are you sure you want to delete this screenshot?')) return;
 
-    await supabase.storage.from('screenshots').remove([screenshot.storage_path]);
-    await supabase.from('screenshots').delete().eq('id', screenshot.id);
+    await db.from('screenshots').delete().eq('id', screenshot.id);
     onClose();
     onUpdate();
   };
@@ -153,11 +158,18 @@ export function ScreenshotModal({ screenshot, onClose, onUpdate }: ScreenshotMod
 
         <div className="flex-1 overflow-hidden flex">
           <div className="flex-1 bg-gray-50 flex items-center justify-center p-6 overflow-auto">
-            <img
-              src={getImageUrl()}
-              alt={screenshot.file_name}
-              className="max-w-full max-h-full object-contain rounded-lg shadow-lg"
-            />
+            {imageUrl ? (
+              <img
+                src={imageUrl}
+                alt={screenshot.file_name}
+                className="max-w-full max-h-full object-contain rounded-lg shadow-lg"
+              />
+            ) : (
+              <div className="flex flex-col items-center justify-center">
+                <ImageIcon className="w-16 h-16 text-gray-400 mb-4" />
+                <p className="text-gray-500">Loading image...</p>
+              </div>
+            )}
           </div>
 
           <div className="w-96 bg-white border-l border-gray-200 overflow-y-auto p-6 space-y-6">

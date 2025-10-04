@@ -7,4 +7,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
       callback(data);
     });
   },
+  auth: {
+    signUp: (email, password) => ipcRenderer.invoke('auth:sign-up', { email, password }),
+    signIn: (email, password) => ipcRenderer.invoke('auth:sign-in', { email, password }),
+    signOut: () => ipcRenderer.invoke('auth:sign-out'),
+    getSession: () => ipcRenderer.invoke('auth:get-session'),
+  },
+  db: {
+    query: (params) => ipcRenderer.invoke('db:query', params),
+  },
+  file: {
+    read: (filePath) => ipcRenderer.invoke('file:read', filePath),
+  },
 });

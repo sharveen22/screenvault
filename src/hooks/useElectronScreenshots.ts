@@ -1,15 +1,6 @@
 import { useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { db } from '../lib/database';
 import { extractTextFromImage, generateSmartFilename, generateTags } from '../lib/ocr';
-
-declare global {
-  interface Window {
-    electronAPI?: {
-      takeScreenshot: () => Promise<void>;
-      onScreenshotCaptured: (callback: (data: any) => void) => void;
-    };
-  }
-}
 
 export function useElectronScreenshots(userId: string | undefined) {
   useEffect(() => {
@@ -19,6 +10,7 @@ export function useElectronScreenshots(userId: string | undefined) {
       buffer: string;
       filename: string;
       bounds: any;
+      filePath: string;
     }) => {
       try {
         console.log('Screenshot received from Electron');
@@ -31,35 +23,34 @@ export function useElectronScreenshots(userId: string | undefined) {
         const smartFilename = generateSmartFilename(ocrResult.text, data.filename);
         const autoTags = generateTags(ocrResult.text);
 
-        const fileName = `${userId}/${Date.now()}-${smartFilename}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from('screenshots')
-          .upload(fileName, file);
-
-        if (uploadError) throw uploadError;
-
         const img = document.createElement('img');
         img.src = URL.createObjectURL(file);
         await new Promise((resolve) => {
           img.onload = resolve;
         });
 
-        const { error: dbError } = await supabase.from('screenshots').insert([
-          {
-            user_id: userId,
-            file_name: smartFilename,
-            file_size: file.size,
-            file_type: file.type,
-            width: img.width,
-            height: img.height,
-            storage_path: fileName,
-            source: 'desktop',
-            ocr_text: ocrResult.text,
-            ocr_confidence: ocrResult.confidence,
-            custom_tags: autoTags,
-          },
-        ]);
+        const { error: dbError } = await db.from('screenshots').insert({
+          id: crypto.randomUUID(),
+          user_id: userId,
+          file_name: smartFilename,
+          file_size: file.size,
+          file_type: file.type,
+          width: img.width,
+          height: img.height,
+          storage_path: data.filePath,
+          source: 'desktop',
+          ocr_text: ocrResult.text,
+          ocr_confidence: ocrResult.confidence,
+          custom_tags: autoTags,
+          ai_tags: [],
+          user_notes: '',
+          is_favorite: false,
+          is_archived: false,
+          thumbnail_path: null,
+          ai_description: null,
+          folder_id: null,
+          view_count: 0,
+        }).select();
 
         if (dbError) throw dbError;
 

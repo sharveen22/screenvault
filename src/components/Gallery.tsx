@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { supabase, Screenshot } from '../lib/supabase';
-import { Star, Download, Share2, Trash2, MoreVertical, Image as ImageIcon } from 'lucide-react';
+import { db, Screenshot } from '../lib/database';
+import { Star, Download, Share2, Trash2, Image as ImageIcon } from 'lucide-react';
 import { ScreenshotModal } from './ScreenshotModal';
 
 interface GalleryProps {
@@ -24,32 +24,32 @@ export function Gallery({ searchQuery, activeView }: GalleryProps) {
 
     setLoading(true);
     try {
-      let query = supabase
-        .from('screenshots')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
+      const { data, error } = await db.from('screenshots').select().eq('user_id', user.id).order('created_at', { ascending: false }).limit(1000);
+
+      if (error) throw error;
+
+      let filtered = data || [];
 
       if (activeView === 'favorites') {
-        query = query.eq('is_favorite', true);
+        filtered = filtered.filter(s => s.is_favorite);
       } else if (activeView === 'archived') {
-        query = query.eq('is_archived', true);
+        filtered = filtered.filter(s => s.is_archived);
       } else if (activeView === 'recent') {
         const sevenDaysAgo = new Date();
         sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-        query = query.gte('created_at', sevenDaysAgo.toISOString());
+        filtered = filtered.filter(s => new Date(s.created_at) >= sevenDaysAgo);
       }
 
       if (searchQuery) {
-        query = query.or(
-          `file_name.ilike.%${searchQuery}%,ocr_text.ilike.%${searchQuery}%,user_notes.ilike.%${searchQuery}%`
+        const query = searchQuery.toLowerCase();
+        filtered = filtered.filter(s =>
+          s.file_name.toLowerCase().includes(query) ||
+          s.ocr_text?.toLowerCase().includes(query) ||
+          s.user_notes?.toLowerCase().includes(query)
         );
       }
 
-      const { data, error } = await query;
-
-      if (error) throw error;
-      setScreenshots(data || []);
+      setScreenshots(filtered);
     } catch (error) {
       console.error('Error loading screenshots:', error);
     } finally {
@@ -59,10 +59,11 @@ export function Gallery({ searchQuery, activeView }: GalleryProps) {
 
   const toggleFavorite = async (screenshot: Screenshot, e: React.MouseEvent) => {
     e.stopPropagation();
-    const { error } = await supabase
+    const { error } = await db
       .from('screenshots')
       .update({ is_favorite: !screenshot.is_favorite })
-      .eq('id', screenshot.id);
+      .eq('id', screenshot.id)
+      .select();
 
     if (!error) {
       setScreenshots((prev) =>
@@ -77,16 +78,7 @@ export function Gallery({ searchQuery, activeView }: GalleryProps) {
     e.stopPropagation();
     if (!confirm('Are you sure you want to delete this screenshot?')) return;
 
-    const { error: storageError } = await supabase.storage
-      .from('screenshots')
-      .remove([screenshot.storage_path]);
-
-    if (storageError) {
-      console.error('Error deleting file:', storageError);
-      return;
-    }
-
-    const { error } = await supabase
+    const { error } = await db
       .from('screenshots')
       .delete()
       .eq('id', screenshot.id);
@@ -96,11 +88,9 @@ export function Gallery({ searchQuery, activeView }: GalleryProps) {
     }
   };
 
-  const getImageUrl = (screenshot: Screenshot) => {
-    const { data } = supabase.storage
-      .from('screenshots')
-      .getPublicUrl(screenshot.storage_path);
-    return data.publicUrl;
+  const getImageUrl = async (storagePath: string) => {
+    const { data } = await window.electronAPI!.file.read(storagePath);
+    return `data:image/png;base64,${data}`;
   };
 
   const formatDate = (dateString: string) => {
@@ -151,73 +141,15 @@ export function Gallery({ searchQuery, activeView }: GalleryProps) {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
         {screenshots.map((screenshot) => (
-          <div
+          <ScreenshotCard
             key={screenshot.id}
-            onClick={() => setSelectedScreenshot(screenshot)}
-            className="group relative bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-lg hover:scale-[1.02] transition-all cursor-pointer"
-          >
-            <div className="aspect-video bg-gray-100 overflow-hidden">
-              <img
-                src={getImageUrl(screenshot)}
-                alt={screenshot.file_name}
-                className="w-full h-full object-cover"
-                loading="lazy"
-              />
-            </div>
-
-            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100">
-              <button
-                onClick={(e) => toggleFavorite(screenshot, e)}
-                className="p-2 bg-white rounded-lg hover:bg-gray-100 transition-colors"
-              >
-                <Star
-                  className={`w-5 h-5 ${
-                    screenshot.is_favorite ? 'fill-yellow-400 text-yellow-400' : 'text-gray-700'
-                  }`}
-                />
-              </button>
-              <button className="p-2 bg-white rounded-lg hover:bg-gray-100 transition-colors">
-                <Download className="w-5 h-5 text-gray-700" />
-              </button>
-              <button className="p-2 bg-white rounded-lg hover:bg-gray-100 transition-colors">
-                <Share2 className="w-5 h-5 text-gray-700" />
-              </button>
-              <button
-                onClick={(e) => deleteScreenshot(screenshot, e)}
-                className="p-2 bg-white rounded-lg hover:bg-red-50 transition-colors"
-              >
-                <Trash2 className="w-5 h-5 text-red-600" />
-              </button>
-            </div>
-
-            {screenshot.is_favorite && (
-              <div className="absolute top-3 right-3">
-                <Star className="w-5 h-5 fill-yellow-400 text-yellow-400" />
-              </div>
-            )}
-
-            <div className="p-4">
-              <h3 className="font-medium text-gray-900 truncate mb-1">
-                {screenshot.file_name}
-              </h3>
-              <div className="flex items-center justify-between text-sm text-gray-500">
-                <span>{formatDate(screenshot.created_at)}</span>
-                <span>{(screenshot.file_size / 1024).toFixed(1)} KB</span>
-              </div>
-              {screenshot.custom_tags.length > 0 && (
-                <div className="flex gap-1 mt-2 flex-wrap">
-                  {screenshot.custom_tags.slice(0, 3).map((tag) => (
-                    <span
-                      key={tag}
-                      className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded"
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+            screenshot={screenshot}
+            onSelect={setSelectedScreenshot}
+            onToggleFavorite={toggleFavorite}
+            onDelete={deleteScreenshot}
+            getImageUrl={getImageUrl}
+            formatDate={formatDate}
+          />
         ))}
       </div>
 
@@ -229,5 +161,102 @@ export function Gallery({ searchQuery, activeView }: GalleryProps) {
         />
       )}
     </>
+  );
+}
+
+function ScreenshotCard({
+  screenshot,
+  onSelect,
+  onToggleFavorite,
+  onDelete,
+  getImageUrl,
+  formatDate,
+}: {
+  screenshot: Screenshot;
+  onSelect: (screenshot: Screenshot) => void;
+  onToggleFavorite: (screenshot: Screenshot, e: React.MouseEvent) => void;
+  onDelete: (screenshot: Screenshot, e: React.MouseEvent) => void;
+  getImageUrl: (path: string) => Promise<string>;
+  formatDate: (date: string) => string;
+}) {
+  const [imageUrl, setImageUrl] = useState<string>('');
+
+  useEffect(() => {
+    getImageUrl(screenshot.storage_path).then(setImageUrl);
+  }, [screenshot.storage_path]);
+
+  return (
+    <div
+      onClick={() => onSelect(screenshot)}
+      className="group relative bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-lg hover:scale-[1.02] transition-all cursor-pointer"
+    >
+      <div className="aspect-video bg-gray-100 overflow-hidden">
+        {imageUrl ? (
+          <img
+            src={imageUrl}
+            alt={screenshot.file_name}
+            className="w-full h-full object-cover"
+            loading="lazy"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            <ImageIcon className="w-10 h-10 text-gray-400" />
+          </div>
+        )}
+      </div>
+
+      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100">
+        <button
+          onClick={(e) => onToggleFavorite(screenshot, e)}
+          className="p-2 bg-white rounded-lg hover:bg-gray-100 transition-colors"
+        >
+          <Star
+            className={`w-5 h-5 ${
+              screenshot.is_favorite ? 'fill-yellow-400 text-yellow-400' : 'text-gray-700'
+            }`}
+          />
+        </button>
+        <button className="p-2 bg-white rounded-lg hover:bg-gray-100 transition-colors">
+          <Download className="w-5 h-5 text-gray-700" />
+        </button>
+        <button className="p-2 bg-white rounded-lg hover:bg-gray-100 transition-colors">
+          <Share2 className="w-5 h-5 text-gray-700" />
+        </button>
+        <button
+          onClick={(e) => onDelete(screenshot, e)}
+          className="p-2 bg-white rounded-lg hover:bg-red-50 transition-colors"
+        >
+          <Trash2 className="w-5 h-5 text-red-600" />
+        </button>
+      </div>
+
+      {screenshot.is_favorite && (
+        <div className="absolute top-3 right-3">
+          <Star className="w-5 h-5 fill-yellow-400 text-yellow-400" />
+        </div>
+      )}
+
+      <div className="p-4">
+        <h3 className="font-medium text-gray-900 truncate mb-1">
+          {screenshot.file_name}
+        </h3>
+        <div className="flex items-center justify-between text-sm text-gray-500">
+          <span>{formatDate(screenshot.created_at)}</span>
+          <span>{(screenshot.file_size / 1024).toFixed(1)} KB</span>
+        </div>
+        {screenshot.custom_tags.length > 0 && (
+          <div className="flex gap-1 mt-2 flex-wrap">
+            {screenshot.custom_tags.slice(0, 3).map((tag) => (
+              <span
+                key={tag}
+                className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded"
+              >
+                {tag}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
