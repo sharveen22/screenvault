@@ -9,8 +9,10 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.app.json",
+    "postinstall": "electron-builder install-app-deps",
     "electron:dev": "concurrently \"cross-env NODE_ENV=development npm run dev\" \"wait-on http://localhost:5173 && cross-env NODE_ENV=development electron .\"",
-    "electron:build": "npm run build && electron-builder"
+    "electron:build": "npm run build && electron-builder",
+    "rebuild": "electron-rebuild -f -w better-sqlite3"
   },
   "build": {
     "appId": "com.screenvault.app",
@@ -62,6 +64,7 @@
     "cross-env": "^10.1.0",
     "electron": "^38.2.0",
     "electron-builder": "^26.0.12",
+    "electron-rebuild": "^3.2.9",
     "eslint": "^9.9.1",
     "eslint-plugin-react-hooks": "^5.1.0-rc.0",
     "eslint-plugin-react-refresh": "^0.4.11",
