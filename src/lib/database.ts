@@ -28,48 +28,66 @@ export const isElectron = !!window.electronAPI;
 
 export const db = {
   from: (table: string) => ({
-    select: (columns = '*') => ({
-      eq: (column: string, value: any) => ({
-        maybeSingle: async () => {
-          const { data, error } = await window.electronAPI!.db.query({
-            table,
-            operation: 'select',
-            where: { [column]: value },
+    select: (columns = '*') => {
+      let whereClause: any = null;
+      let orderClause: { column: string; ascending: boolean } | null = null;
+      let limitValue: number | null = null;
+
+      const buildQuery = async () => {
+        const { data, error } = await window.electronAPI!.db.query({
+          table,
+          operation: 'select',
+          where: whereClause,
+        });
+
+        if (error) return { data: null, error };
+
+        let result = data || [];
+
+        if (orderClause) {
+          result = [...result].sort((a, b) => {
+            if (orderClause!.ascending) {
+              return a[orderClause!.column] > b[orderClause!.column] ? 1 : -1;
+            }
+            return a[orderClause!.column] < b[orderClause!.column] ? 1 : -1;
           });
+        }
+
+        if (limitValue !== null) {
+          result = result.slice(0, limitValue);
+        }
+
+        return { data: result, error: null };
+      };
+
+      const queryBuilder: any = {
+        eq: (column: string, value: any) => {
+          whereClause = { [column]: value };
+          return queryBuilder;
+        },
+        order: (column: string, options?: { ascending?: boolean }) => {
+          orderClause = { column, ascending: options?.ascending ?? false };
+          return queryBuilder;
+        },
+        limit: (count: number) => {
+          limitValue = count;
+          return buildQuery();
+        },
+        maybeSingle: async () => {
+          const { data, error } = await buildQuery();
           return { data: data?.[0] || null, error };
         },
         single: async () => {
-          const { data, error } = await window.electronAPI!.db.query({
-            table,
-            operation: 'select',
-            where: { [column]: value },
-          });
+          const { data, error } = await buildQuery();
           if (!data?.[0]) {
             return { data: null, error: 'No rows found' };
           }
           return { data: data[0], error };
         },
-      }),
-      order: (column: string, options?: { ascending?: boolean }) => ({
-        limit: async (count: number) => {
-          const { data, error } = await window.electronAPI!.db.query({
-            table,
-            operation: 'select',
-          });
+      };
 
-          if (error) return { data: null, error };
-
-          const sorted = [...data].sort((a, b) => {
-            if (options?.ascending) {
-              return a[column] > b[column] ? 1 : -1;
-            }
-            return a[column] < b[column] ? 1 : -1;
-          });
-
-          return { data: sorted.slice(0, count), error: null };
-        },
-      }),
-    }),
+      return queryBuilder;
+    },
     insert: (values: any) => ({
       select: async () => {
         const id = crypto.randomUUID();

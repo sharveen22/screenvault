@@ -15,8 +15,12 @@ export function useElectronScreenshots(userId: string | undefined) {
       try {
         console.log('Screenshot received from Electron');
 
-        const buffer = Buffer.from(data.buffer, 'base64');
-        const blob = new Blob([buffer], { type: 'image/png' });
+        const binaryString = atob(data.buffer);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        const blob = new Blob([bytes], { type: 'image/png' });
         const file = new File([blob], data.filename, { type: 'image/png' });
 
         const ocrResult = await extractTextFromImage(file);
