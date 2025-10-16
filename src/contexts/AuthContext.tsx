@@ -42,9 +42,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signUp = async (email: string, password: string) => {
-    if (!isElectron) {
-      return { error: 'Desktop app only' };
-    }
+    // if (!isElectron) {
+    //   return { error: 'Desktop app only' };
+    // }
 
     try {
       const { user: newUser, error } = await window.electronAPI!.auth.signUp(email, password);
@@ -63,9 +63,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signIn = async (email: string, password: string) => {
-    if (!isElectron) {
-      return { error: 'Desktop app only' };
-    }
+    // if (!isElectron) {
+    //   return { error: 'Desktop app only' };
+    // }
 
     try {
       const { user: currentUser, error } = await window.electronAPI!.auth.signIn(email, password);

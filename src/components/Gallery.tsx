@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { db, Screenshot } from '../lib/database';
-import { Star, Download, Share2, Trash2, Image as ImageIcon } from 'lucide-react';
+import { Star, Download, Share2, Trash2, Image as ImageIcon, RefreshCcw } from 'lucide-react';
 import { ScreenshotModal } from './ScreenshotModal';
 
 interface GalleryProps {
@@ -16,77 +16,199 @@ export function Gallery({ searchQuery, activeView }: GalleryProps) {
   const [selectedScreenshot, setSelectedScreenshot] = useState<Screenshot | null>(null);
 
   useEffect(() => {
+    console.log('user', user);
+    console.log('activeView', activeView);
+    console.log('searchQuery', searchQuery);
     loadScreenshots();
   }, [user, activeView, searchQuery]);
 
   const loadScreenshots = async () => {
     if (!user) return;
-
+  
     setLoading(true);
     try {
-      const { data, error } = await db.from('screenshots').select().eq('user_id', user.id).order('created_at', { ascending: false }).limit(1000);
-
-      if (error) throw error;
-
-      let filtered = data || [];
-
+      const uid = user.id as string;
+      const qRaw = (searchQuery || '').trim().toLowerCase();
+  
+      console.log('[Gallery] loadScreenshots start', { uid, activeView, q: qRaw });
+  
+      // --- 1) Ambil data utama ---
+      const primaryRes = await db.from('screenshots').select({
+        where: { user_id: uid },
+        orderBy: { column: 'created_at', direction: 'desc' }, // kalau IPC abaikan, kita sort manual
+        limit: 1000,
+      });
+  
+      let rows: any[] = Array.isArray(primaryRes.data) ? primaryRes.data : [];
+      if (primaryRes.error) {
+        console.warn('[Gallery] primary error:', primaryRes.error);
+      }
+      console.log('[Gallery] primary count:', rows.length);
+  
+      // --- 1b) Sort aman DESC by created_at (fallback kalau backend abaikan orderBy) ---
+      const safeTime = (v: any) => {
+        const t = new Date(v?.created_at ?? 0).getTime();
+        return Number.isFinite(t) ? t : 0;
+      };
+      rows.sort((a, b) => safeTime(b) - safeTime(a));
+  
+      // --- 2) Fallback lama kalau benar2 kosong (jarang) ---
+      if (!rows.length) {
+        console.warn('[Gallery] fallback: select all then filter in memory');
+        const allRes = await db.from('screenshots').select(); // tanpa where
+        if (allRes.error) throw allRes.error;
+  
+        const all = Array.isArray(allRes.data) ? allRes.data : [];
+        rows = all
+          .filter((r: any) => r.user_id === uid)
+          .sort((a: any, b: any) => safeTime(b) - safeTime(a))
+          .slice(0, 1000);
+  
+        console.log('[Gallery] fallback count:', rows.length);
+      }
+  
+      // --- 3) Filter berdasarkan activeView ---
+      let filtered = rows;
       if (activeView === 'favorites') {
-        filtered = filtered.filter(s => s.is_favorite);
+        filtered = filtered.filter((s: any) => !!s.is_favorite);
       } else if (activeView === 'archived') {
-        filtered = filtered.filter(s => s.is_archived);
+        filtered = filtered.filter((s: any) => !!s.is_archived);
       } else if (activeView === 'recent') {
         const sevenDaysAgo = new Date();
         sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-        filtered = filtered.filter(s => new Date(s.created_at) >= sevenDaysAgo);
-      }
-
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase();
-        filtered = filtered.filter(s =>
-          s.file_name.toLowerCase().includes(query) ||
-          s.ocr_text?.toLowerCase().includes(query) ||
-          s.user_notes?.toLowerCase().includes(query)
+        filtered = filtered.filter(
+          (s: any) => new Date(s.created_at).getTime() >= sevenDaysAgo.getTime()
         );
       }
-
-      setScreenshots(filtered);
-    } catch (error) {
-      console.error('Error loading screenshots:', error);
+  
+      // =========================
+      // 4) TEXT SEARCH + TAGS
+      // =========================
+  
+      // helper: normalisasi string -> lower + trim
+      const norm = (v: any) => (typeof v === 'string' ? v.toLowerCase() : '');
+  
+      // helper: flatten tags (custom_tags & ai_tags) -> string[]
+      const pickTags = (s: any) => {
+        const ct = Array.isArray(s?.custom_tags) ? s.custom_tags : [];
+        const at = Array.isArray(s?.ai_tags) ? s.ai_tags : [];
+        return [...ct, ...at]
+          .filter((x) => x != null)
+          .map((t) => (typeof t === 'string' ? t : String(t)))
+          .map((t) => t.toLowerCase());
+      };
+  
+      if (qRaw) {
+        // tokenisasi: pisah spasi/koma, buang '#'
+        const tokens = qRaw
+          .split(/[\s,]+/)
+          .map((t) => t.replace(/^#/, '').trim())
+          .filter(Boolean);
+  
+        // dukung filter khusus "tag:foo" juga:
+        const tagTokens: string[] = [];
+        const textTokens: string[] = [];
+        for (const tok of tokens) {
+          if (tok.startsWith('tag:')) tagTokens.push(tok.slice(4));
+          else textTokens.push(tok);
+        }
+  
+        filtered = filtered.filter((s: any) => {
+          const name = norm(s.file_name);
+          const ocr = norm(s.ocr_text);
+          const notes = norm(s.user_notes);
+          const tags = pickTags(s); // array lowercased
+  
+          // haystacks teks (gabungan)
+          const haystacks = [name, ocr, notes, tags.join(' ')];
+  
+          // rule:
+          // - semua textTokens harus match di salah satu haystack
+          // - semua tagTokens harus ada di daftar tags
+          const textOK =
+            !textTokens.length ||
+            textTokens.every((tok) => haystacks.some((h) => h.includes(tok)));
+  
+          const tagsOK =
+            !tagTokens.length || tagTokens.every((tt) => tags.some((tg) => tg.includes(tt)));
+  
+          return textOK && tagsOK;
+        });
+      }
+  
+      // --- 5) Set hasil ---
+      console.log('[Gallery] final set', { total: filtered.length });
+      setScreenshots(filtered as any);
+    } catch (err) {
+      console.error('Error loading screenshots:', err);
     } finally {
       setLoading(false);
     }
   };
+  
+const toggleFavorite = async (screenshot: Screenshot, e: React.MouseEvent) => {
+  e.stopPropagation();
 
-  const toggleFavorite = async (screenshot: Screenshot, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const { error } = await db
-      .from('screenshots')
-      .update({ is_favorite: !screenshot.is_favorite })
-      .eq('id', screenshot.id)
-      .select();
+  // pastikan boolean
+  const next = !Boolean(screenshot.is_favorite);
 
-    if (!error) {
-      setScreenshots((prev) =>
-        prev.map((s) =>
-          s.id === screenshot.id ? { ...s, is_favorite: !s.is_favorite } : s
-        )
-      );
-    }
-  };
+  // Optimistic UI
+  setScreenshots((prev) =>
+    prev.map((s) => (s.id === screenshot.id ? { ...s, is_favorite: next } : s))
+  );
 
-  const deleteScreenshot = async (screenshot: Screenshot, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!confirm('Are you sure you want to delete this screenshot?')) return;
+  const { error } = await db
+    .from('screenshots')
+    .update({ is_favorite: next })
+    .eq('id', screenshot.id)
+    .select();
 
-    const { error } = await db
+  if (error) {
+    // rollback kalau gagal
+    setScreenshots((prev) =>
+      prev.map((s) => (s.id === screenshot.id ? { ...s, is_favorite: !next } : s))
+    );
+    console.error('Failed to toggle favorite:', error);
+    return;
+  }
+
+  // Jika sedang view "favorites" dan di-unfavorite → hilangkan dari list
+  if (activeView === 'favorites' && !next) {
+    setScreenshots((prev) => prev.filter((s) => s.id !== screenshot.id));
+  }
+};
+
+const deleteScreenshot = async (screenshot: Screenshot, e: React.MouseEvent) => {
+  e.stopPropagation();
+  if (!confirm('Delete this screenshot?')) return;
+
+  // --- 1. Optimistic update: hapus dulu dari UI ---
+  const prevState = screenshots;
+  setScreenshots((prev) => prev.filter((s) => s.id !== screenshot.id));
+
+  try {
+    // --- 2. Hapus record dari SQLite / DB ---
+    const { error: dbError } = await db
       .from('screenshots')
       .delete()
       .eq('id', screenshot.id);
 
-    if (!error) {
-      setScreenshots((prev) => prev.filter((s) => s.id !== screenshot.id));
+    if (dbError) throw dbError;
+
+    if (screenshot.storage_path) {
+      try {
+        await window.electronAPI?.file.delete(screenshot.storage_path);
+        console.log('File deleted:', screenshot.storage_path);
+      } catch (fileErr) {
+        console.warn('DB deleted but file remove failed:', fileErr);
+      }
     }
-  };
+  } catch (err) {
+    console.error('Delete failed, rolling back:', err);
+    setScreenshots(prevState);
+  }
+};
+
 
   const getImageUrl = async (storagePath: string) => {
     const { data } = await window.electronAPI!.file.read(storagePath);
@@ -132,11 +254,24 @@ export function Gallery({ searchQuery, activeView }: GalleryProps) {
 
   return (
     <>
-      <div className="mb-6">
+      <div className="mb-6 flex items-center justify-between">
+        <div className="">
+
         <h2 className="text-2xl font-bold text-gray-900 mb-1">
           {activeView.charAt(0).toUpperCase() + activeView.slice(1)} Screenshots
         </h2>
         <p className="text-gray-500">{screenshots.length} screenshots</p>
+        </div>
+
+        <div>
+        <button
+            onClick={loadScreenshots}
+            className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-sm rounded-lg flex items-center gap-2 transition"
+          >
+            <RefreshCcw size={16}/>
+            Reload
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
