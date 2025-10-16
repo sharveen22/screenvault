@@ -1,15 +1,31 @@
+// database.js
 const Database = require('better-sqlite3');
 const path = require('path');
-const { app } = require('electron');
+const fs = require('fs');            // <-- pastikan ada
+// const { app } = require('electron'); // TIDAK DIPAKAI LAGI untuk path DB
 
 let db;
 
 function initDatabase() {
-  const userDataPath = app.getPath('userData');
-  const dbPath = path.join(userDataPath, 'screenvault.db');
+  // Lokasi: <project-root>/db
+  // __dirname menunjuk ke folder file ini (mis. .../electron)
+  // jadi naik 1 level ke root project
+  const projectRoot = path.join(__dirname, '..');
+  const dbFolder = path.join(projectRoot, 'db');
+
+  // buat folder db jika belum ada
+  if (!fs.existsSync(dbFolder)) {
+    fs.mkdirSync(dbFolder, { recursive: true });
+  }
+
+  // nama file DB (bisa dibuat dinamis via ENV kalau mau)
+  const dbName = process.env.DB_NAME || 'screenvault';
+  const dbPath = path.join(dbFolder, `${dbName}.db`);
 
   db = new Database(dbPath);
-  db.pragma('journal_mode = WAL');
+  db.pragma('journal_mode = WAL');     // performa & durability lebih baik
+  db.pragma('foreign_keys = ON');      // jaga FK constraint
+  db.pragma('busy_timeout = 3000');    // elak "database is locked" singkat
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
@@ -77,16 +93,12 @@ function initDatabase() {
 }
 
 function getDatabase() {
-  if (!db) {
-    throw new Error('Database not initialized');
-  }
+  if (!db) throw new Error('Database not initialized');
   return db;
 }
 
 function closeDatabase() {
-  if (db) {
-    db.close();
-  }
+  if (db) db.close();
 }
 
 module.exports = {
