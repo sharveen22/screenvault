@@ -37,7 +37,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   openMacScreenSettings: () => ipcRenderer.invoke('perm:open-mac-screen-settings'),
-
+  notify: (payload) => ipcRenderer.invoke('notify', payload),
+  onNotificationAction: (cb) => {
+    const handler = (_e, data) => cb?.(data);
+    ipcRenderer.on('notification-action', handler);
+    return () => ipcRenderer.removeListener('notification-action', handler);
+  },
   // auth / db / file – tetap sama
   auth: {
     signUp: (email, password) => ipcRenderer.invoke('auth:sign-up', { email, password }),

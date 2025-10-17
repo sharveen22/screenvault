@@ -26,6 +26,20 @@ declare global {
       offScreenshotCaptured?: (cb: (data: ScreenshotPayload) => void) => void;
       onLog?: (cb: (p: { ts: string; level: string; msg: string }) => void) => (() => void) | void;
       openMacScreenSettings?: () => Promise<void> | void;
+
+      // ✅ Notifikasi dari Electron (pastikan sudah diexpose di preload)
+      notify?: (payload: {
+        id?: string;
+        title: string;
+        body?: string;
+        silent?: boolean;
+        focus?: boolean;
+        openPath?: string;
+        openUrl?: string;
+        actions?: { text: string; openPath?: string; openUrl?: string; channel?: string }[];
+        closeButtonText?: string;
+      }) => Promise<boolean> | boolean | void;
+      onNotificationAction?: (cb: (data: { id?: string; index: number; action: any }) => void) => (() => void) | void;
     };
   }
 }
@@ -49,6 +63,18 @@ export function useElectronScreenshots(userId: string | undefined) {
 
   const isCsvBytes = (s: string) => /^[0-9]+(?:,[0-9]+)+$/.test((s || '').trim());
   const isDataUrl = (s: string) => /^data:image\/[^;]+;base64,/.test(s || '');
+
+  const html5Notify = async (title: string, body?: string) => {
+    if ('Notification' in window) {
+      try {
+        if (Notification.permission === 'granted' || (await Notification.requestPermission()) === 'granted') {
+          new Notification(title, { body });
+        }
+      } catch {
+        // ignore
+      }
+    }
+  };
 
   // bytes first
   const toUint8 = (data: ScreenshotPayload): Uint8Array => {
@@ -102,15 +128,53 @@ export function useElectronScreenshots(userId: string | undefined) {
         }
 
         // ---- OCR (JALANKAN SEBELUM INSERT) ----
-        // Tidak di-skip: selalu coba OCR
+        // Notifikasi: mulai OCR
+        const ocrStartId = `ocr-${Date.now()}`;
+        if (window.electronAPI?.notify) {
+          await window.electronAPI.notify({
+            id: ocrStartId,
+            title: 'Processing OCR',
+            body: 'Analyzing text from screenshot…',
+            silent: true,
+          });
+        } else {
+          await html5Notify('Processing OCR', 'Analyzing text from screenshot…');
+        }
+
         let ocrText = '';
         let ocrConf: number | null = null;
+        let ocrOk = false;
         try {
           const ocr = await extractTextFromImage(file);
           ocrText = ocr?.text || '';
           ocrConf = (ocr as any)?.confidence ?? null;
+          ocrOk = !!ocrText?.trim();
+          // Notifikasi: hasil OCR (sukses/empty)
+          if (ocrOk) {
+            await window.electronAPI?.notify?.({
+              title: 'OCR complete',
+              body: `Extracted ~${Math.min(ocrText.length, 80)} chars`,
+              silent: true,
+            });
+          } else {
+            await window.electronAPI?.notify?.({
+              title: 'OCR complete',
+              body: 'No text detected',
+              silent: true,
+            });
+          }
         } catch (e) {
           console.warn('OCR failed, continue insert with empty OCR:', e);
+          // Notifikasi: OCR gagal
+          if (window.electronAPI?.notify) {
+            await window.electronAPI.notify({
+              title: 'OCR failed',
+              body: 'Saved without OCR text',
+              silent: true,
+            });
+          } else {
+            await html5Notify('OCR failed', 'Saved without OCR text');
+          }
         }
 
         // ---- Smart filename & tags (berdasarkan OCR) ----
@@ -151,12 +215,38 @@ export function useElectronScreenshots(userId: string | undefined) {
 
         if (insertErr) throw insertErr;
 
+        // ✅ Notifikasi: screenshot tersimpan
+        const sizeKB = Math.max(1, Math.round(file.size / 1024));
+        if (window.electronAPI?.notify) {
+          await window.electronAPI.notify({
+            title: 'Screenshot saved',
+            body: `${smartName} • ${width || '?'}×${height || '?'} (${sizeKB} KB)`,
+            focus: false,
+            openPath: (data as any).filePath,
+            actions: [
+              { text: 'Show in folder', openPath: (data as any).filePath },
+            ],
+          });
+        } else {
+          await html5Notify('Screenshot saved', `${smartName}`);
+        }
+
+        // (opsional) refresh UI ringan
         setTimeout(() => {
           if (typeof window !== 'undefined') window.location.reload();
         }, 50);
 
       } catch (error) {
         console.error('Error processing screenshot (OCR-first path):', error);
+        // Notifikasi error proses keseluruhan
+        if (window.electronAPI?.notify) {
+          await window.electronAPI.notify({
+            title: 'Save failed',
+            body: error instanceof Error ? error.message : 'Unexpected error',
+          });
+        } else {
+          await html5Notify('Save failed', error instanceof Error ? error.message : 'Unexpected error');
+        }
       }
     },
     [userId]

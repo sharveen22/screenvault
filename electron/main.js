@@ -10,13 +10,15 @@ const {
   dialog,
   shell,
   clipboard,
-  systemPreferences
+  systemPreferences,
+  Notification
 } = require('electron');
 
 const path = require('path');
 const fs = require('fs');
 const { spawn, spawnSync } = require('child_process');
 const crypto = require('crypto');
+app.setAppUserModelId('com.screenvault.app'); 
 
 const { initDatabase, getDatabase, closeDatabase } = require('./database');
 
@@ -438,6 +440,50 @@ ipcMain.handle('auth:sign-in', async (_e, { email, password }) => {
 ipcMain.handle('auth:sign-out', async () => { currentUser = null; return { error: null }; });
 ipcMain.handle('auth:get-session', async () => ({ user: currentUser }));
 
+ipcMain.handle('notify', (_evt, payload = {}) => {
+  // payload: { id?, title, body, silent?, focus?, openPath?, openUrl?, actions?: [{text, openPath?, openUrl?, channel?}], closeButtonText? }
+  const iconPath = path.join(__dirname, '../public/icon.png');
+  const icon = nativeImage.createFromPath(iconPath);
+
+  const n = new Notification({
+    title: payload.title || 'Notification',
+    body: payload.body || '',
+    silent: !!payload.silent,
+    icon: icon.isEmpty() ? undefined : icon,
+    // macOS akan menampilkan tombol action jika ada.
+    actions: Array.isArray(payload.actions)
+      ? payload.actions.map(a => ({ type: 'button', text: a.text?.toString().slice(0, 40) || 'Open' }))
+      : undefined,
+    closeButtonText: payload.closeButtonText || 'Close',
+  });
+
+  // Klik di notifikasi -> fokus app / buka lokasi/URL bila diminta
+  n.on('click', () => {
+    if (payload.focus && BrowserWindow.getAllWindows()[0]) {
+      const win = BrowserWindow.getAllWindows()[0];
+      if (win.isMinimized()) win.restore();
+      win.show(); win.focus();
+    }
+    if (payload.openPath) shell.showItemInFolder(payload.openPath);
+    if (payload.openUrl) shell.openExternal(payload.openUrl);
+  });
+
+  // Klik pada action button (index sesuai urutan actions)
+  n.on('action', (_event, index) => {
+    const action = Array.isArray(payload.actions) ? payload.actions[index] : null;
+    if (!action) return;
+    if (action.openPath) shell.showItemInFolder(action.openPath);
+    if (action.openUrl) shell.openExternal(action.openUrl);
+    // Kirim balik ke renderer jika ingin ditangani lebih lanjut
+    const win = BrowserWindow.getAllWindows()[0];
+    if (win && action.channel) {
+      win.webContents.send('notification-action', { id: payload.id, index, action });
+    }
+  });
+
+  n.show();
+  return true;
+});
 ipcMain.handle('db:query', async (_e, { table, operation, data, where }) => {
   try {
     const db = getDatabase();
