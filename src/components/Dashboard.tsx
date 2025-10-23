@@ -23,7 +23,7 @@ import { UploadZone } from './UploadZone';
 
 export function Dashboard() {
   const { user, userProfile, signOut } = useAuth();
-  const { isElectron, takeScreenshot } = useElectronScreenshots(user?.id);
+  const { isElectron, takeScreenshot } = useElectronScreenshots();
   const [searchQuery, setSearchQuery] = useState('');
   const [showUploadZone, setShowUploadZone] = useState(false);
   const [activeView, setActiveView] = useState<'all' | 'favorites' | 'recent' | 'archived'>('all');

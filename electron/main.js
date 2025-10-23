@@ -18,7 +18,18 @@ const path = require('path');
 const fs = require('fs');
 const { spawn, spawnSync } = require('child_process');
 const crypto = require('crypto');
-app.setAppUserModelId('com.screenvault.app'); 
+app.setAppUserModelId('com.screenvault.app');
+
+// Global error handlers
+process.on('unhandledRejection', (reason, promise) => {
+  sendLog(`Unhandled Promise Rejection: ${reason}`, 'error');
+  console.error('Unhandled Promise Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+  sendLog(`Uncaught Exception: ${error}`, 'error');
+  console.error('Uncaught Exception:', error);
+}); 
 
 const { initDatabase, getDatabase, closeDatabase } = require('./database');
 
@@ -120,7 +131,7 @@ function createWindow() {
 }
 
 function createTray() {
-  const iconPath = path.join(__dirname, '../public/tray-icon.png');
+  const iconPath = path.join(__dirname, '../public/camera2.png');
   let trayIcon;
   try {
     trayIcon = nativeImage.createFromPath(iconPath);
@@ -193,29 +204,60 @@ async function autoPromptMacScreenPermissionOnce() {
 
   sendLog('Auto-prompt macOS Screen Recording permission (hidden window)…');
 
-  const promptWin = new BrowserWindow({
-    show: false,
-    width: 300,
-    height: 200,
-    webPreferences: { nodeIntegration: false, contextIsolation: true }
-  });
+  try {
+    const promptWin = new BrowserWindow({
+      show: false,
+      width: 300,
+      height: 200,
+      webPreferences: { nodeIntegration: false, contextIsolation: true }
+    });
 
-  const html = `
-    <!doctype html><meta charset="utf-8">
-    <script>
-      (async () => {
-        try {
-          const s = await navigator.mediaDevices.getDisplayMedia({video:true, audio:false});
-          s.getTracks().forEach(t => t.stop());
-          window.close();
-        } catch (e) { window.close(); }
-      })();
-    </script>ok
-  `;
-  await promptWin.loadURL('data:text/html,' + encodeURIComponent(html));
-  try { fs.writeFileSync(flagFile, '1'); } catch {}
+    const html = `<!doctype html><meta charset="utf-8"><script>(async () => { try { const s = await navigator.mediaDevices.getDisplayMedia({video:true, audio:false}); s.getTracks().forEach(t => t.stop()); window.close(); } catch (e) { window.close(); } })();</script>ok`;
+    
+    await promptWin.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+    
+    // Auto close window after 5 seconds to prevent hanging
+    setTimeout(() => {
+      try {
+        if (!promptWin.isDestroyed()) {
+          promptWin.close();
+        }
+      } catch (e) {
+        sendLog(`Error closing prompt window: ${e}`, 'error');
+      }
+    }, 5000);
+    
+    try { fs.writeFileSync(flagFile, '1'); } catch {}
+  } catch (error) {
+    sendLog(`Auto-prompt error: ${error}`, 'error');
+  }
 }
+const USE_TEMPLATE = true; // set false kalau ikon full-color (tidak monochrome)
 
+function loadTrayIconCamera() {
+  try {
+    const p = path.join(__dirname, '../public', 'camera1.png');
+    let img = nativeImage.createFromPath(p);
+    if (img.isEmpty()) return nativeImage.createEmpty();
+
+    // Pastikan ada representasi kecil (tray mac biasanya 18pt & 36pt untuk retina)
+    const rep18 = img.resize({ width: 18, height: 18, quality: 'best' });
+    const rep36 = img.resize({ width: 36, height: 36, quality: 'best' });
+
+    // Buat nativeImage dengan multi-representation
+    const multi = nativeImage.createEmpty();
+    multi.addRepresentation({ scaleFactor: 1, width: 18, height: 18, buffer: rep18.toPNG() });
+    multi.addRepresentation({ scaleFactor: 2, width: 36, height: 36, buffer: rep36.toPNG() });
+
+    // Jika ikonnya monochrome dan ingin auto-tint macOS:
+    if (process.platform === 'darwin' && USE_TEMPLATE) {
+      multi.setTemplateImage(true);
+    }
+    return multi;
+  } catch {
+    return nativeImage.createEmpty();
+  }
+}
 /* ====================== Capture via SYSTEM tools ====================== */
 async function takeScreenshotSystem() {
   if (isCapturing) return;
@@ -401,7 +443,13 @@ app.whenReady().then(async () => {
       const exe = app.getPath('exe');
       sendLog(`macOS screen status: ${status || 'unknown'} | exec: ${exe}`);
     } catch (e) { sendLog(`getMediaAccessStatus error: ${e}`, 'error'); }
-    setTimeout(() => autoPromptMacScreenPermissionOnce(), 800);
+    setTimeout(async () => {
+      try {
+        await autoPromptMacScreenPermissionOnce();
+      } catch (error) {
+        sendLog(`Auto-prompt setup error: ${error}`, 'error');
+      }
+    }, 800);
   }
 
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
@@ -565,4 +613,44 @@ ipcMain.handle('file:delete', async (_e, filePath) => new Promise((resolve, reje
 ipcMain.handle('perm:open-mac-screen-settings', async () => {
   openMacScreenSettings();
   return true;
+});
+
+// Database API endpoints
+ipcMain.handle('db:get-info', async () => {
+  try {
+    const { getDatabaseInfo } = require('./database');
+    return { data: getDatabaseInfo(), error: null };
+  } catch (error) {
+    return { data: null, error: error.message };
+  }
+});
+
+ipcMain.handle('db:export', async (_e, exportPath) => {
+  try {
+    const { exportDatabase } = require('./database');
+    const result = exportDatabase(exportPath);
+    return { data: result, error: null };
+  } catch (error) {
+    return { data: null, error: error.message };
+  }
+});
+
+ipcMain.handle('db:import', async (_e, importPath) => {
+  try {
+    const { importDatabase } = require('./database');
+    importDatabase(importPath);
+    return { data: true, error: null };
+  } catch (error) {
+    return { data: null, error: error.message };
+  }
+});
+
+ipcMain.handle('db:get-path', async () => {
+  try {
+    const { getDatabaseInfo } = require('./database');
+    const info = getDatabaseInfo();
+    return { data: info.path, error: null };
+  } catch (error) {
+    return { data: null, error: error.message };
+  }
 });

@@ -18,28 +18,28 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [userProfile, setUserProfile] = useState<UserExtended | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Set default user without authentication
+  const [user, setUser] = useState<User | null>({ 
+    id: 'default-user', 
+    email: 'user@screenvault.app' 
+  });
+  const [userProfile, setUserProfile] = useState<UserExtended | null>({
+    id: 'default-user',
+    email: 'user@screenvault.app',
+    plan: 'Free',
+    storage_used: 0,
+    storage_limit: 1024 * 1024 * 1024, // 1GB
+    screenshot_count: 0,
+    onboarding_completed: true,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  });
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    checkSession();
-  }, []);
-
-  const checkSession = async () => {
-    if (isElectron) {
-      try {
-        const { user: currentUser } = await window.electronAPI!.auth.getSession();
-        if (currentUser) {
-          setUser({ id: currentUser.id, email: currentUser.email });
-          setUserProfile(currentUser);
-        }
-      } catch (error) {
-        console.error('Error checking session:', error);
-      }
-    }
+    // No need to check session, just set loading to false
     setLoading(false);
-  };
+  }, []);
 
   const signUp = async (email: string, password: string) => {
     // if (!isElectron) {
@@ -84,11 +84,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
-    if (isElectron) {
-      await window.electronAPI!.auth.signOut();
-    }
-    setUser(null);
-    setUserProfile(null);
+    // No sign out needed since we don't have authentication
+    console.log('Sign out called but authentication is disabled');
   };
 
   const value = {

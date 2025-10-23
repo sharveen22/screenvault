@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { useAuth } from '../contexts/AuthContext';
 import { db, Screenshot } from '../lib/database';
 import { Star, Download, Share2, Trash2, Image as ImageIcon, RefreshCcw } from 'lucide-react';
 import { ScreenshotModal } from './ScreenshotModal';
@@ -10,34 +9,28 @@ interface GalleryProps {
 }
 
 export function Gallery({ searchQuery, activeView }: GalleryProps) {
-  const { user } = useAuth();
   const [screenshots, setScreenshots] = useState<Screenshot[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedScreenshot, setSelectedScreenshot] = useState<Screenshot | null>(null);
 
   useEffect(() => {
-    console.log('user', user);
     console.log('activeView', activeView);
     console.log('searchQuery', searchQuery);
     loadScreenshots();
-  }, [user, activeView, searchQuery]);
+  }, [activeView, searchQuery]);
 
   const loadScreenshots = async () => {
-    if (!user) return;
-  
     setLoading(true);
     try {
-      const uid = user.id as string;
       const qRaw = (searchQuery || '').trim().toLowerCase();
   
-      console.log('[Gallery] loadScreenshots start', { uid, activeView, q: qRaw });
+      console.log('[Gallery] loadScreenshots start', { activeView, q: qRaw });
   
       // --- 1) Ambil data utama ---
       const primaryRes = await db.from('screenshots').select({
-        where: { user_id: uid },
-        orderBy: { column: 'created_at', direction: 'desc' }, // kalau IPC abaikan, kita sort manual
+        orderBy: { column: 'created_at', direction: 'desc' },
         limit: 1000,
-      });
+      }) as any;
   
       let rows: any[] = Array.isArray(primaryRes.data) ? primaryRes.data : [];
       if (primaryRes.error) {
@@ -55,12 +48,11 @@ export function Gallery({ searchQuery, activeView }: GalleryProps) {
       // --- 2) Fallback lama kalau benar2 kosong (jarang) ---
       if (!rows.length) {
         console.warn('[Gallery] fallback: select all then filter in memory');
-        const allRes = await db.from('screenshots').select(); // tanpa where
+        const allRes = await db.from('screenshots').select() as any; // tanpa where
         if (allRes.error) throw allRes.error;
   
         const all = Array.isArray(allRes.data) ? allRes.data : [];
         rows = all
-          .filter((r: any) => r.user_id === uid)
           .sort((a: any, b: any) => safeTime(b) - safeTime(a))
           .slice(0, 1000);
   

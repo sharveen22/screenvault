@@ -12,6 +12,9 @@
     "postinstall": "electron-builder install-app-deps",
     "electron:dev": "concurrently \"cross-env NODE_ENV=development npm run dev\" \"wait-on http://localhost:5173 && cross-env NODE_ENV=development electron .\"",
     "electron:build": "npm run build && electron-builder",
+    "electron:build:mac": "npm run build && electron-builder --mac --x64 --arm64",
+    "electron:build:win": "npm run build && electron-builder --win --x64",
+    "electron:build:linux": "npm run build && electron-builder --linux --x64",
     "rebuild": "electron-rebuild -f -w better-sqlite3"
   },
   "build": {
@@ -23,16 +26,25 @@
     "files": [
       "dist/**/*",
       "electron/**/*",
-      "package.json"
+      "package.json",
+      "db/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "dist",
+        "to": "dist"
+      }
     ],
     "mac": {
       "category": "public.app-category.productivity",
+      "icon": "public/camera1.png",
       "target": [
         "dmg",
         "zip"
       ]
     },
     "win": {
+      "icon": "public/camera1.png",
       "target": [
         "nsis",
         "portable"
