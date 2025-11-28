@@ -23,7 +23,7 @@ import { UploadZone } from './UploadZone';
 
 export function Dashboard() {
   const { user, userProfile, signOut } = useAuth();
-  const { isElectron, takeScreenshot } = useElectronScreenshots(user?.id);
+  const { isElectron, takeScreenshot } = useElectronScreenshots();
   const [searchQuery, setSearchQuery] = useState('');
   const [showUploadZone, setShowUploadZone] = useState(false);
   const [activeView, setActiveView] = useState<'all' | 'favorites' | 'recent' | 'archived'>('all');
@@ -70,8 +70,8 @@ export function Dashboard() {
   const sidebarItems = [
     { id: 'all', icon: Camera, label: 'All Screenshots', count: userProfile?.screenshot_count || 0 },
     { id: 'favorites', icon: Star, label: 'Favorites' },
-    { id: 'recent', icon: Clock, label: 'Recent' },
-    { id: 'archived', icon: Archive, label: 'Archived' },
+    // { id: 'recent', icon: Clock, label: 'Recent' },
+    // { id: 'archived', icon: Archive, label: 'Archived' },
   ];
 
   const bottomItems = [
@@ -121,7 +121,7 @@ export function Dashboard() {
               </button>
             )}
 
-            <button
+            {/* <button
               onClick={() => setShowUploadZone(true)}
               className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium group relative"
               title="Upload screenshot (Ctrl/Cmd + U)"
@@ -131,14 +131,14 @@ export function Dashboard() {
               <kbd className="hidden group-hover:inline-block ml-2 px-1.5 py-0.5 bg-blue-700 rounded text-xs font-mono">
                 ⌘U
               </kbd>
-            </button>
+            </button> */}
 
-            <button className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors">
+            {/* <button className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors">
               <Bell className="w-5 h-5 text-gray-600" />
               <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
-            </button>
+            </button> */}
 
-            <div className="flex items-center gap-3 pl-3 border-l border-gray-200">
+            {/* <div className="flex items-center gap-3 pl-3 border-l border-gray-200">
               <div className="text-right">
                 <div className="text-sm font-medium text-gray-900">{user?.email}</div>
                 <div className="text-xs text-gray-500 capitalize">{userProfile?.plan || 'Free'} Plan</div>
@@ -146,7 +146,7 @@ export function Dashboard() {
               <button className="w-9 h-9 bg-blue-100 rounded-lg flex items-center justify-center">
                 <User className="w-5 h-5 text-blue-600" />
               </button>
-            </div>
+            </div> */}
           </div>
         </div>
       </header>
@@ -176,7 +176,7 @@ export function Dashboard() {
               </button>
             ))}
 
-            <div className="pt-4 mt-4 border-t border-gray-200">
+            {/* <div className="pt-4 mt-4 border-t border-gray-200">
               <div className="px-3 mb-2 flex items-center justify-between">
                 <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   Folders
@@ -193,9 +193,9 @@ export function Dashboard() {
                 <Folder className="w-5 h-5 text-green-500" />
                 <span>Personal</span>
               </button>
-            </div>
+            </div> */}
 
-            <div className="pt-4 mt-4 border-t border-gray-200">
+            {/* <div className="pt-4 mt-4 border-t border-gray-200">
               <div className="px-3 mb-2">
                 <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   Tags
@@ -215,10 +215,10 @@ export function Dashboard() {
                   bug
                 </span>
               </div>
-            </div>
+            </div> */}
           </nav>
 
-          <div className="border-t border-gray-200 pt-4 space-y-1">
+          {/* <div className="border-t border-gray-200 pt-4 space-y-1">
             {bottomItems.map((item) => (
               <button
                 key={item.label}
@@ -235,7 +235,7 @@ export function Dashboard() {
               <LogOut className="w-5 h-5" />
               <span>Sign Out</span>
             </button>
-          </div>
+          </div> */}
 
           <div className="mt-4 space-y-3">
             <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
@@ -275,7 +275,7 @@ export function Dashboard() {
               </div>
             </div>
 
-            <div className="p-3 bg-blue-50 rounded-lg">
+            {/* <div className="p-3 bg-blue-50 rounded-lg">
               <div className="text-xs font-semibold text-blue-900 mb-1">Storage</div>
               <div className="flex items-center justify-between text-xs text-blue-700 mb-2">
                 <span>{((userProfile?.storage_used || 0) / 1024 / 1024).toFixed(1)} MB</span>
@@ -292,7 +292,7 @@ export function Dashboard() {
                   }}
                 ></div>
               </div>
-            </div>
+            </div> */}
           </div>
         </aside>
 

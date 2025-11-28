@@ -57,7 +57,7 @@ const api = hasWindow ? window.electronAPI : undefined;
 
 export const isElectron = !!api;
 
-function assertElectron(method: string): asserts api is NonNullable<typeof window.electronAPI> {
+function assertElectron(method: string) {
   if (!api) {
     throw new Error(`[db] Electron API not available. Tried to call: ${method}`);
   }
@@ -256,7 +256,6 @@ export const db = {
 
 export type Screenshot = {
   id: string;
-  user_id: string;
   file_name: string;
   file_size: number;
   file_type: string;
@@ -281,7 +280,6 @@ export type Screenshot = {
 
 export type Folder = {
   id: string;
-  user_id: string;
   name: string;
   parent_id: string | null;
   color: string;

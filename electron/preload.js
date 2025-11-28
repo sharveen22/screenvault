@@ -15,7 +15,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => {
       try {
         ipcRenderer.removeListener('screenshot-captured', handler);
-      } catch {}
+      } catch { }
       screenshotListeners.delete(handler);
     };
   },
@@ -24,7 +24,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // optional explicit off
     for (const h of screenshotListeners) {
       if (h === callback) {
-        try { ipcRenderer.removeListener('screenshot-captured', h); } catch {}
+        try { ipcRenderer.removeListener('screenshot-captured', h); } catch { }
         screenshotListeners.delete(h);
       }
     }
@@ -37,6 +37,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   openMacScreenSettings: () => ipcRenderer.invoke('perm:open-mac-screen-settings'),
+  notify: (payload) => ipcRenderer.invoke('notify', payload),
+  onNotificationAction: (cb) => {
+    const handler = (_e, data) => cb?.(data);
+    ipcRenderer.on('notification-action', handler);
+    return () => ipcRenderer.removeListener('notification-action', handler);
+  },
+  onInit: (callback) => {
+    const handler = (_evt, filePath) => callback(filePath);
+    ipcRenderer.on('popup:init', handler);
+    return () => ipcRenderer.removeListener('popup:init', handler);
+  },
+  copy: () => ipcRenderer.send('popup:copy'),
+  copyData: (dataUrl) => ipcRenderer.send('popup:copy-data', dataUrl),
+  save: (dataUrl) => ipcRenderer.send('popup:save', dataUrl),
+  trash: () => ipcRenderer.send('popup:trash'),
+  share: () => ipcRenderer.send('popup:share'),
+  close: () => ipcRenderer.send('popup:close'),
 
   // auth / db / file – tetap sama
   auth: {
@@ -47,6 +64,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   db: {
     query: (params) => ipcRenderer.invoke('db:query', params),
+    getInfo: () => ipcRenderer.invoke('db:get-info'),
+    export: (exportPath) => ipcRenderer.invoke('db:export', exportPath),
+    import: (importPath) => ipcRenderer.invoke('db:import', importPath),
+    getPath: () => ipcRenderer.invoke('db:get-path'),
   },
   file: {
     delete: (filePath) => ipcRenderer.invoke('file:delete', filePath),

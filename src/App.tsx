@@ -1,25 +1,24 @@
-import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { Auth } from './components/Auth';
+import { useState, useEffect } from 'react';
+import { AuthProvider } from './contexts/AuthContext';
 import { Dashboard } from './components/Dashboard';
-
-function AppContent() {
-  const { user, loading } = useAuth();
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-      </div>
-    );
-  }
-
-  return user ? <Dashboard /> : <Auth />;
-}
+import { Editor } from './components/Editor';
 
 function App() {
+  const [route, setRoute] = useState(window.location.hash);
+
+  useEffect(() => {
+    const handleHashChange = () => setRoute(window.location.hash);
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  if (route === '#editor') {
+    return <Editor />;
+  }
+
   return (
     <AuthProvider>
-      <AppContent />
+      <Dashboard />
     </AuthProvider>
   );
 }
