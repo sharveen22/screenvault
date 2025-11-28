@@ -23,42 +23,42 @@ export function Gallery({ searchQuery, activeView }: GalleryProps) {
     setLoading(true);
     try {
       const qRaw = (searchQuery || '').trim().toLowerCase();
-  
+
       console.log('[Gallery] loadScreenshots start', { activeView, q: qRaw });
-  
+
       // --- 1) Ambil data utama ---
       const primaryRes = await db.from('screenshots').select({
         orderBy: { column: 'created_at', direction: 'desc' },
         limit: 1000,
       }) as any;
-  
+
       let rows: any[] = Array.isArray(primaryRes.data) ? primaryRes.data : [];
       if (primaryRes.error) {
         console.warn('[Gallery] primary error:', primaryRes.error);
       }
       console.log('[Gallery] primary count:', rows.length);
-  
+
       // --- 1b) Sort aman DESC by created_at (fallback kalau backend abaikan orderBy) ---
       const safeTime = (v: any) => {
         const t = new Date(v?.created_at ?? 0).getTime();
         return Number.isFinite(t) ? t : 0;
       };
       rows.sort((a, b) => safeTime(b) - safeTime(a));
-  
+
       // --- 2) Fallback lama kalau benar2 kosong (jarang) ---
       if (!rows.length) {
         console.warn('[Gallery] fallback: select all then filter in memory');
         const allRes = await db.from('screenshots').select() as any; // tanpa where
         if (allRes.error) throw allRes.error;
-  
+
         const all = Array.isArray(allRes.data) ? allRes.data : [];
         rows = all
           .sort((a: any, b: any) => safeTime(b) - safeTime(a))
           .slice(0, 1000);
-  
+
         console.log('[Gallery] fallback count:', rows.length);
       }
-  
+
       // --- 3) Filter berdasarkan activeView ---
       let filtered = rows;
       if (activeView === 'favorites') {
@@ -72,14 +72,14 @@ export function Gallery({ searchQuery, activeView }: GalleryProps) {
           (s: any) => new Date(s.created_at).getTime() >= sevenDaysAgo.getTime()
         );
       }
-  
+
       // =========================
       // 4) TEXT SEARCH + TAGS
       // =========================
-  
+
       // helper: normalisasi string -> lower + trim
       const norm = (v: any) => (typeof v === 'string' ? v.toLowerCase() : '');
-  
+
       // helper: flatten tags (custom_tags & ai_tags) -> string[]
       const pickTags = (s: any) => {
         const ct = Array.isArray(s?.custom_tags) ? s.custom_tags : [];
@@ -89,14 +89,14 @@ export function Gallery({ searchQuery, activeView }: GalleryProps) {
           .map((t) => (typeof t === 'string' ? t : String(t)))
           .map((t) => t.toLowerCase());
       };
-  
+
       if (qRaw) {
         // tokenisasi: pisah spasi/koma, buang '#'
         const tokens = qRaw
           .split(/[\s,]+/)
           .map((t) => t.replace(/^#/, '').trim())
           .filter(Boolean);
-  
+
         // dukung filter khusus "tag:foo" juga:
         const tagTokens: string[] = [];
         const textTokens: string[] = [];
@@ -104,30 +104,30 @@ export function Gallery({ searchQuery, activeView }: GalleryProps) {
           if (tok.startsWith('tag:')) tagTokens.push(tok.slice(4));
           else textTokens.push(tok);
         }
-  
+
         filtered = filtered.filter((s: any) => {
           const name = norm(s.file_name);
           const ocr = norm(s.ocr_text);
           const notes = norm(s.user_notes);
           const tags = pickTags(s); // array lowercased
-  
+
           // haystacks teks (gabungan)
           const haystacks = [name, ocr, notes, tags.join(' ')];
-  
+
           // rule:
           // - semua textTokens harus match di salah satu haystack
           // - semua tagTokens harus ada di daftar tags
           const textOK =
             !textTokens.length ||
             textTokens.every((tok) => haystacks.some((h) => h.includes(tok)));
-  
+
           const tagsOK =
             !tagTokens.length || tagTokens.every((tt) => tags.some((tg) => tg.includes(tt)));
-  
+
           return textOK && tagsOK;
         });
       }
-  
+
       // --- 5) Set hasil ---
       console.log('[Gallery] final set', { total: filtered.length });
       setScreenshots(filtered as any);
@@ -137,74 +137,94 @@ export function Gallery({ searchQuery, activeView }: GalleryProps) {
       setLoading(false);
     }
   };
-  
-const toggleFavorite = async (screenshot: Screenshot, e: React.MouseEvent) => {
-  e.stopPropagation();
 
-  // pastikan boolean
-  const next = !Boolean(screenshot.is_favorite);
+  const toggleFavorite = async (screenshot: Screenshot, e: React.MouseEvent) => {
+    e.stopPropagation();
 
-  // Optimistic UI
-  setScreenshots((prev) =>
-    prev.map((s) => (s.id === screenshot.id ? { ...s, is_favorite: next } : s))
-  );
+    // pastikan boolean
+    const next = !Boolean(screenshot.is_favorite);
 
-  const { error } = await db
-    .from('screenshots')
-    .update({ is_favorite: next })
-    .eq('id', screenshot.id)
-    .select();
-
-  if (error) {
-    // rollback kalau gagal
+    // Optimistic UI
     setScreenshots((prev) =>
-      prev.map((s) => (s.id === screenshot.id ? { ...s, is_favorite: !next } : s))
+      prev.map((s) => (s.id === screenshot.id ? { ...s, is_favorite: next } : s))
     );
-    console.error('Failed to toggle favorite:', error);
-    return;
-  }
 
-  // Jika sedang view "favorites" dan di-unfavorite → hilangkan dari list
-  if (activeView === 'favorites' && !next) {
-    setScreenshots((prev) => prev.filter((s) => s.id !== screenshot.id));
-  }
-};
-
-const deleteScreenshot = async (screenshot: Screenshot, e: React.MouseEvent) => {
-  e.stopPropagation();
-  if (!confirm('Delete this screenshot?')) return;
-
-  // --- 1. Optimistic update: hapus dulu dari UI ---
-  const prevState = screenshots;
-  setScreenshots((prev) => prev.filter((s) => s.id !== screenshot.id));
-
-  try {
-    // --- 2. Hapus record dari SQLite / DB ---
-    const { error: dbError } = await db
+    const { error } = await db
       .from('screenshots')
-      .delete()
-      .eq('id', screenshot.id);
+      .update({ is_favorite: next })
+      .eq('id', screenshot.id)
+      .select();
 
-    if (dbError) throw dbError;
-
-    if (screenshot.storage_path) {
-      try {
-        await window.electronAPI?.file.delete(screenshot.storage_path);
-        console.log('File deleted:', screenshot.storage_path);
-      } catch (fileErr) {
-        console.warn('DB deleted but file remove failed:', fileErr);
-      }
+    if (error) {
+      // rollback kalau gagal
+      setScreenshots((prev) =>
+        prev.map((s) => (s.id === screenshot.id ? { ...s, is_favorite: !next } : s))
+      );
+      console.error('Failed to toggle favorite:', error);
+      return;
     }
-  } catch (err) {
-    console.error('Delete failed, rolling back:', err);
-    setScreenshots(prevState);
-  }
-};
+
+    // Jika sedang view "favorites" dan di-unfavorite → hilangkan dari list
+    if (activeView === 'favorites' && !next) {
+      setScreenshots((prev) => prev.filter((s) => s.id !== screenshot.id));
+    }
+  };
+
+  const deleteScreenshot = async (screenshot: Screenshot, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm('Delete this screenshot?')) return;
+
+    // --- 1. Optimistic update: hapus dulu dari UI ---
+    const prevState = screenshots;
+    setScreenshots((prev) => prev.filter((s) => s.id !== screenshot.id));
+
+    try {
+      // --- 2. Hapus record dari SQLite / DB ---
+      const { error: dbError } = await db
+        .from('screenshots')
+        .delete()
+        .eq('id', screenshot.id);
+
+      if (dbError) throw dbError;
+
+      if (screenshot.storage_path) {
+        try {
+          await window.electronAPI?.file.delete(screenshot.storage_path);
+          console.log('File deleted:', screenshot.storage_path);
+        } catch (fileErr) {
+          console.warn('DB deleted but file remove failed:', fileErr);
+        }
+      }
+    } catch (err) {
+      console.error('Delete failed, rolling back:', err);
+      setScreenshots(prevState);
+    }
+  };
 
 
   const getImageUrl = async (storagePath: string) => {
-    const { data } = await window.electronAPI!.file.read(storagePath);
-    return `data:image/png;base64,${data}`;
+    try {
+      console.log('[Gallery] Loading image:', storagePath);
+      const result = await window.electronAPI!.file.read(storagePath);
+      console.log('[Gallery] Read result:', { hasData: !!result.data, error: result.error, dataLength: result.data?.length });
+
+      if (result.error) {
+        console.error('[Gallery] Error reading file:', result.error);
+        return '';
+      }
+
+      if (!result.data) {
+        console.error('[Gallery] No data returned for:', storagePath);
+        return '';
+      }
+
+      const dataUrl = `data:image/png;base64,${result.data}`;
+      console.log('[Gallery] Generated data URL, length:', dataUrl.length);
+      return dataUrl;
+    } catch (e) {
+      console.error('[Gallery] Exception in getImageUrl:', e, 'for path:', storagePath);
+      return '';
+    }
   };
 
   const formatDate = (dateString: string) => {
@@ -249,18 +269,18 @@ const deleteScreenshot = async (screenshot: Screenshot, e: React.MouseEvent) => 
       <div className="mb-6 flex items-center justify-between">
         <div className="">
 
-        <h2 className="text-2xl font-bold text-gray-900 mb-1">
-          {activeView.charAt(0).toUpperCase() + activeView.slice(1)} Screenshots
-        </h2>
-        <p className="text-gray-500">{screenshots.length} screenshots</p>
+          <h2 className="text-2xl font-bold text-gray-900 mb-1">
+            {activeView.charAt(0).toUpperCase() + activeView.slice(1)} Screenshots
+          </h2>
+          <p className="text-gray-500">{screenshots.length} screenshots</p>
         </div>
 
         <div>
-        <button
+          <button
             onClick={loadScreenshots}
             className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-sm rounded-lg flex items-center gap-2 transition"
           >
-            <RefreshCcw size={16}/>
+            <RefreshCcw size={16} />
             Reload
           </button>
         </div>
@@ -338,9 +358,8 @@ function ScreenshotCard({
           className="p-2 bg-white rounded-lg hover:bg-gray-100 transition-colors"
         >
           <Star
-            className={`w-5 h-5 ${
-              screenshot.is_favorite ? 'fill-yellow-400 text-yellow-400' : 'text-gray-700'
-            }`}
+            className={`w-5 h-5 ${screenshot.is_favorite ? 'fill-yellow-400 text-yellow-400' : 'text-gray-700'
+              }`}
           />
         </button>
         <button className="p-2 bg-white rounded-lg hover:bg-gray-100 transition-colors">

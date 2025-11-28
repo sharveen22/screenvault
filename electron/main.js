@@ -18,7 +18,7 @@ const path = require('path');
 const fs = require('fs');
 const { spawn, spawnSync } = require('child_process');
 const crypto = require('crypto');
-app.setAppUserModelId('com.screenvault.app');
+app.setAppUserModelId('com.screenvault.app.taufiq');
 
 // Global error handlers
 process.on('unhandledRejection', (reason, promise) => {
@@ -29,7 +29,7 @@ process.on('unhandledRejection', (reason, promise) => {
 process.on('uncaughtException', (error) => {
   sendLog(`Uncaught Exception: ${error}`, 'error');
   console.error('Uncaught Exception:', error);
-}); 
+});
 
 const { initDatabase, getDatabase, closeDatabase } = require('./database');
 
@@ -45,7 +45,7 @@ function sendLog(msg, level = 'info') {
     if (level === 'error') console.error('[ScreenVault]', payload.ts, level.toUpperCase(), msg);
     else console.log('[ScreenVault]', payload.ts, level.toUpperCase(), msg);
     mainWindow?.webContents?.send?.('shot:log', payload);
-  } catch {}
+  } catch { }
 }
 
 /* ====================== Path & utils ====================== */
@@ -55,7 +55,7 @@ const which = (cmd) => {
   return r.status === 0;
 };
 
-function ensureDir(p) { try { fs.mkdirSync(p, { recursive: true }); } catch {} }
+function ensureDir(p) { try { fs.mkdirSync(p, { recursive: true }); } catch { } }
 
 function screenshotsDir() {
   const dir = path.join(app.getPath('pictures'), 'ScreenVault');
@@ -66,7 +66,7 @@ function screenshotsDir() {
 function timestampName() {
   const d = new Date();
   const pad = (n) => String(n).padStart(2, '0');
-  return `screenshot_${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}_${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}.png`;
+  return `screenshot_${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}_${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}.png`;
 }
 
 function saveBufferToFile(buf) {
@@ -116,22 +116,31 @@ function createWindow() {
     mainWindow.loadURL('http://localhost:5173');
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+    const indexPath = path.join(app.getAppPath(), "dist", "index.html");
+    console.log("Loading index.html from:", indexPath);
+    mainWindow.loadFile(indexPath).catch(err => {
+      console.error("Failed to load index.html:", err);
+    });
   }
 
   mainWindow.once('ready-to-show', () => mainWindow.show());
 
   mainWindow.on('close', (event) => {
-    if (!app.isQuiting) {
-      event.preventDefault();
-      mainWindow.hide();
-    }
-    return false;
+    app.quit();
   });
 }
 
+function getTrayIconPath() {
+  const isDev = process.env.NODE_ENV === 'development';
+  if (isDev) {
+    return path.join(__dirname, '../public/camera2.png');
+  } else {
+    return path.join(app.getAppPath(), "dist", "camera2.png");
+  }
+}
+
 function createTray() {
-  const iconPath = path.join(__dirname, '../public/camera2.png');
+  const iconPath = getTrayIconPath();
   let trayIcon;
   try {
     trayIcon = nativeImage.createFromPath(iconPath);
@@ -165,7 +174,7 @@ function hideAppWindowForCapture() {
     }
     mainWindow.setAlwaysOnTop(false);
     mainWindow.setOpacity(0); // jangan hide, biar overlay OS tetap jalan
-  } catch {}
+  } catch { }
 }
 function releaseAppWindowAfterCapture() {
   setTimeout(() => {
@@ -181,7 +190,7 @@ function releaseAppWindowAfterCapture() {
         mainWindow.setAlwaysOnTop(false);
       }
       mainWindow.setOpacity(1);
-    } catch {}
+    } catch { }
   }, 120);
 }
 
@@ -213,9 +222,9 @@ async function autoPromptMacScreenPermissionOnce() {
     });
 
     const html = `<!doctype html><meta charset="utf-8"><script>(async () => { try { const s = await navigator.mediaDevices.getDisplayMedia({video:true, audio:false}); s.getTracks().forEach(t => t.stop()); window.close(); } catch (e) { window.close(); } })();</script>ok`;
-    
+
     await promptWin.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
-    
+
     // Auto close window after 5 seconds to prevent hanging
     setTimeout(() => {
       try {
@@ -226,8 +235,8 @@ async function autoPromptMacScreenPermissionOnce() {
         sendLog(`Error closing prompt window: ${e}`, 'error');
       }
     }, 5000);
-    
-    try { fs.writeFileSync(flagFile, '1'); } catch {}
+
+    try { fs.writeFileSync(flagFile, '1'); } catch { }
   } catch (error) {
     sendLog(`Auto-prompt error: ${error}`, 'error');
   }
@@ -258,6 +267,225 @@ function loadTrayIconCamera() {
     return nativeImage.createEmpty();
   }
 }
+// ... existing code ...
+
+/* ====================== Screenshot Popup ====================== */
+let popupWindow = null;
+let popupTimeout = null;
+
+function createScreenshotPopup(filePath) {
+  if (popupWindow) {
+    if (!popupWindow.isDestroyed()) {
+      popupWindow.close();
+    }
+    popupWindow = null;
+  }
+
+  const { screen } = require('electron');
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
+
+  // Read image to get dimensions
+  let w = 1200;
+  let h = 800;
+
+  try {
+    const img = nativeImage.createFromPath(filePath);
+    const size = img.getSize();
+
+    if (size.width > 0 && size.height > 0) {
+      // Toolbar needs ~900px minimum to show all tools without wrapping
+      const toolbarHeight = 56;
+      const minPadding = 40; // Padding for window chrome/dock
+
+      // Calculate max available space
+      const maxWidth = screenWidth - minPadding * 2;
+      const maxHeight = screenHeight - minPadding * 2;
+
+      // Start with actual image size
+      let windowWidth = size.width + minPadding; // Add some side padding
+      let windowHeight = size.height + toolbarHeight + minPadding;
+
+      // Scale down if larger than screen
+      if (windowWidth > maxWidth || windowHeight > maxHeight) {
+        const scaleX = maxWidth / windowWidth;
+        const scaleY = maxHeight / windowHeight;
+        const scale = Math.min(scaleX, scaleY);
+
+        windowWidth = Math.floor(windowWidth * scale);
+        windowHeight = Math.floor(windowHeight * scale);
+      }
+
+      // Enforce minimums
+      w = Math.max(900, windowWidth);
+      h = Math.max(600, windowHeight);
+
+      sendLog(`Screenshot size: ${size.width}x${size.height}, Window size: ${w}x${h}`);
+    }
+  } catch (e) {
+    sendLog(`Error reading image dimensions: ${e}`, 'error');
+  }
+
+  popupWindow = new BrowserWindow({
+    width: w,
+    height: h,
+    x: Math.floor((screenWidth - w) / 2),
+    y: Math.floor((screenHeight - h) / 2),
+    frame: false,
+    resizable: true,
+    alwaysOnTop: false,
+    show: false,
+    backgroundColor: '#1e1e1e',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      webSecurity: false
+    }
+  });
+
+  const isDev = process.env.NODE_ENV === 'development';
+  if (isDev) {
+    popupWindow.loadURL('http://localhost:5173/#editor');
+  } else {
+    const indexPath = path.join(app.getAppPath(), "dist", "index.html");
+    popupWindow.loadFile(indexPath, { hash: 'editor' });
+  }
+
+  popupWindow.once('ready-to-show', () => {
+    if (!popupWindow.isDestroyed()) {
+      popupWindow.show();
+      // Send init data
+      // Note: We use the same channel name but now it's handled by Editor.tsx via preload
+      // We need to make sure preload.js exposes 'onInit' or similar, OR we use the existing IPC
+      // Let's check preload.js. It doesn't have 'onInit'. We should add it or use a generic listener.
+      // Actually, let's just send 'popup:init' and add it to preload.js
+      popupWindow.webContents.send('popup:init', filePath);
+    }
+  });
+
+  popupWindow.on('closed', () => {
+    popupWindow = null;
+  });
+}
+
+// We need a variable to store the last screenshot path for the popup actions
+let lastScreenshotPath = null;
+let screenshotWasSaved = false; // Track if the screenshot was saved
+
+ipcMain.on('popup:close', () => {
+  // Only delete if the screenshot was NOT saved
+  if (!screenshotWasSaved && lastScreenshotPath && fs.existsSync(lastScreenshotPath)) {
+    try {
+      fs.unlinkSync(lastScreenshotPath);
+      sendLog(`Deleted abandoned screenshot: ${lastScreenshotPath}`);
+    } catch (e) {
+      sendLog(`Error deleting abandoned screenshot: ${e}`, 'error');
+    }
+  }
+
+  // Reset flags
+  lastScreenshotPath = null;
+  screenshotWasSaved = false;
+
+  if (popupWindow && !popupWindow.isDestroyed()) popupWindow.close();
+});
+
+ipcMain.on('popup:copy', () => {
+  // Logic handled in renderer or main? 
+  // Since we have the file path in main, we can do it here if we track currentScreenshotPath
+  // But easier to just re-read file or use clipboard API
+  // Actually, we need the current screenshot path.
+  // Let's store it temporarily or pass it back.
+  // For now, let's assume the popup has the path.
+  // Simpler: The popup just sends the signal, main process handles it.
+  // We need to track the last screenshot path.
+});
+
+ipcMain.on('popup:save', (_event, dataUrl) => {
+  if (lastScreenshotPath) {
+    try {
+      const image = nativeImage.createFromDataURL(dataUrl);
+      fs.writeFileSync(lastScreenshotPath, image.toPNG());
+      sendLog(`Saved edited screenshot to: ${lastScreenshotPath}`);
+
+      // Mark as saved so it won't be deleted on close
+      screenshotWasSaved = true;
+
+      // NOW emit to main window
+      emitScreenshotToRenderer(lastScreenshotPath, null);
+
+      // Also notify other windows if needed (redundant if emitScreenshotToRenderer handles it)
+      // emitScreenshotToRenderer usually sends to mainWindow.webContents
+    } catch (e) {
+      sendLog(`Save error: ${e}`, 'error');
+    }
+  }
+});
+
+ipcMain.on('popup:copy-data', (_event, dataUrl) => {
+  try {
+    const image = nativeImage.createFromDataURL(dataUrl);
+    clipboard.writeImage(image);
+    sendLog('Copied edited screenshot to clipboard');
+  } catch (e) {
+    sendLog(`Copy error: ${e}`, 'error');
+  }
+});
+
+ipcMain.on('popup:copy', () => {
+  if (lastScreenshotPath) {
+    const image = nativeImage.createFromPath(lastScreenshotPath);
+    clipboard.writeImage(image);
+    sendLog('Copied screenshot to clipboard via popup');
+    // Do NOT close window as per user request
+  }
+});
+
+ipcMain.on('popup:trash', () => {
+  if (lastScreenshotPath) {
+    try {
+      if (fs.existsSync(lastScreenshotPath)) {
+        fs.unlinkSync(lastScreenshotPath);
+        sendLog(`Deleted screenshot: ${lastScreenshotPath}`);
+      }
+    } catch (e) {
+      sendLog(`Error deleting screenshot: ${e}`, 'error');
+    }
+  }
+  if (popupWindow && !popupWindow.isDestroyed()) popupWindow.close();
+});
+
+ipcMain.on('popup:share', () => {
+  if (!lastScreenshotPath) return;
+
+  if (process.platform === 'darwin') {
+    // On macOS, we can't easily remove the "Share >" submenu without native modules.
+    // However, we can make the menu context-aware.
+    const shareMenu = Menu.buildFromTemplate([
+      {
+        label: 'Share Screenshot',
+        role: 'shareMenu',
+        sharingItem: {
+          filePaths: [lastScreenshotPath]
+        }
+      }
+    ]);
+    shareMenu.popup({ window: popupWindow });
+  } else {
+    shell.showItemInFolder(lastScreenshotPath);
+  }
+});
+
+ipcMain.on('popup:edit', () => {
+  if (mainWindow) {
+    mainWindow.show();
+    // TODO: Send event to open editor
+    // mainWindow.webContents.send('open-editor', lastScreenshotPath);
+  }
+  if (popupWindow && !popupWindow.isDestroyed()) popupWindow.close();
+});
+
 /* ====================== Capture via SYSTEM tools ====================== */
 async function takeScreenshotSystem() {
   if (isCapturing) return;
@@ -266,7 +494,11 @@ async function takeScreenshotSystem() {
 
   try {
     const outPath = await captureWithSystem();
-    if (outPath) emitScreenshotToRenderer(outPath, null);
+    if (outPath) {
+      // emitScreenshotToRenderer(outPath, null); // Don't emit yet! Wait for popup action.
+      lastScreenshotPath = outPath;
+      createScreenshotPopup(outPath); // Show popup
+    }
     else sendLog('Capture canceled or failed');
   } catch (e) {
     sendLog(`takeScreenshotSystem error: ${e}`, 'error');
@@ -277,10 +509,12 @@ async function takeScreenshotSystem() {
   }
 }
 
+// ... rest of existing code ...
+
 async function captureWithSystem() {
   sendLog(`Capture requested on platform=${process.platform}`);
   if (process.platform === 'darwin') return await macCaptureDualPath();
-  if (process.platform === 'win32')  return await winCaptureClipboard();
+  if (process.platform === 'win32') return await winCaptureClipboard();
   return await linuxCaptureFile();
 }
 
@@ -391,12 +625,12 @@ function linuxCaptureFile() {
 
     if (!hasGnome && !hasSpectacle) {
       sendLog('No gnome-screenshot/spectacle found', 'error');
-      dialog.showErrorBox('Screenshot tool tidak ditemukan','Install gnome-screenshot (GNOME) atau spectacle (KDE).');
+      dialog.showErrorBox('Screenshot tool tidak ditemukan', 'Install gnome-screenshot (GNOME) atau spectacle (KDE).');
       return resolve(null);
     }
 
     const tmp = path.join(app.getPath('temp'), `sv_${Date.now()}.png`);
-    const cmd  = hasGnome ? 'gnome-screenshot' : 'spectacle';
+    const cmd = hasGnome ? 'gnome-screenshot' : 'spectacle';
     const args = hasGnome ? ['-a', '-f', tmp] : ['-r', '-b', '-n', '-o', tmp];
     sendLog(`Spawn ${cmd} ${args.join(' ')}`);
 
@@ -431,7 +665,38 @@ function registerGlobalShortcuts() {
   sendLog('Global shortcuts registered');
 }
 
+/* ====================== Permissions Check ====================== */
+async function checkPermissions() {
+  if (process.platform !== 'darwin') return;
+
+  const status = systemPreferences.getMediaAccessStatus('screen');
+  sendLog(`Screen Recording permission status: ${status}`);
+
+  if (status !== 'granted') {
+    const { response } = await dialog.showMessageBox({
+      type: 'warning',
+      title: 'Permissions Required',
+      message: 'ScreenVault needs Screen Recording permission to work.',
+      detail: 'Please enable "ScreenVault" in System Settings > Privacy & Security > Screen Recording to capture screenshots and system audio.',
+      buttons: ['Open Settings', 'Quit'],
+      defaultId: 0,
+      cancelId: 1
+    });
+
+    if (response === 0) {
+      await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
+      // We don't quit here, user might grant and come back. 
+      // But usually they need to restart the app.
+      // Let's show another dialog or just let them restart.
+    } else {
+      app.quit();
+    }
+  }
+}
+
 app.whenReady().then(async () => {
+  await checkPermissions();
+
   initDatabase();
   createWindow();
   createTray();
