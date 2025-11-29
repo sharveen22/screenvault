@@ -33,6 +33,13 @@ declare global {
                 import: (path: string) => Promise<{ data: any; error: string | null }>;
                 getPath: () => Promise<{ data: string; error: string | null }>;
             };
+            folder: {
+                list: () => Promise<{ data: any[]; error: string | null }>;
+                create: (name: string) => Promise<{ data: any; error: string | null }>;
+                rename: (id: string, name: string) => Promise<{ data: boolean; error: string | null }>;
+                delete: (id: string) => Promise<{ data: boolean; error: string | null }>;
+                moveScreenshot: (screenshotId: string, folderId: string) => Promise<{ data: boolean; error: string | null }>;
+            };
             file: {
                 read: (path: string) => Promise<{ data: string; error: string | null }>;
                 delete: (path: string) => Promise<boolean>;
