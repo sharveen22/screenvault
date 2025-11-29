@@ -5,10 +5,11 @@ import { ScreenshotModal } from './ScreenshotModal';
 
 interface GalleryProps {
   searchQuery: string;
-  activeView: 'all' | 'favorites' | 'recent' | 'archived';
+  activeView: 'all' | 'favorites' | 'recent' | 'archived' | string; // string for folder IDs
+  onDropSuccess?: () => void;
 }
 
-export function Gallery({ searchQuery, activeView }: GalleryProps) {
+export function Gallery({ searchQuery, activeView, onDropSuccess }: GalleryProps) {
   const [screenshots, setScreenshots] = useState<Screenshot[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedScreenshot, setSelectedScreenshot] = useState<Screenshot | null>(null);
@@ -71,6 +72,9 @@ export function Gallery({ searchQuery, activeView }: GalleryProps) {
         filtered = filtered.filter(
           (s: any) => new Date(s.created_at).getTime() >= sevenDaysAgo.getTime()
         );
+      } else if (activeView !== 'all') {
+        // Assume activeView is a folder ID
+        filtered = filtered.filter((s: any) => s.folder_id === activeView);
       }
 
       // =========================
@@ -98,33 +102,25 @@ export function Gallery({ searchQuery, activeView }: GalleryProps) {
           .filter(Boolean);
 
         // dukung filter khusus "tag:foo" juga:
-        const tagTokens: string[] = [];
-        const textTokens: string[] = [];
-        for (const tok of tokens) {
-          if (tok.startsWith('tag:')) tagTokens.push(tok.slice(4));
-          else textTokens.push(tok);
-        }
+        filtered = filtered.filter((s) => {
+          const textFields = [
+            s.file_name,
+            s.ocr_text,
+            s.ai_description,
+            s.user_notes,
+          ].map(norm).join(' ');
 
-        filtered = filtered.filter((s: any) => {
-          const name = norm(s.file_name);
-          const ocr = norm(s.ocr_text);
-          const notes = norm(s.user_notes);
-          const tags = pickTags(s); // array lowercased
+          const tags = pickTags(s);
 
-          // haystacks teks (gabungan)
-          const haystacks = [name, ocr, notes, tags.join(' ')];
-
-          // rule:
-          // - semua textTokens harus match di salah satu haystack
-          // - semua tagTokens harus ada di daftar tags
-          const textOK =
-            !textTokens.length ||
-            textTokens.every((tok) => haystacks.some((h) => h.includes(tok)));
-
-          const tagsOK =
-            !tagTokens.length || tagTokens.every((tt) => tags.some((tg) => tg.includes(tt)));
-
-          return textOK && tagsOK;
+          return tokens.every((token) => {
+            // A) tag:xxx
+            if (token.startsWith('tag:')) {
+              const tagQuery = token.replace('tag:', '');
+              return tags.some((t) => t.includes(tagQuery));
+            }
+            // B) general search (text OR tags)
+            return textFields.includes(token) || tags.some((t) => t.includes(token));
+          });
         });
       }
 
@@ -227,6 +223,53 @@ export function Gallery({ searchQuery, activeView }: GalleryProps) {
     }
   };
 
+  const handleDragStart = (e: React.DragEvent, screenshot: Screenshot) => {
+    console.log('[Gallery] Drag start for screenshot:', screenshot.id);
+    e.dataTransfer.setData('text/plain', screenshot.id);
+    e.dataTransfer.effectAllowed = 'move';
+
+    // Create a custom drag preview - blue box with text
+    const dragPreview = document.createElement('div');
+    dragPreview.style.width = '120px';
+    dragPreview.style.height = '80px';
+    dragPreview.style.backgroundColor = '#3b82f6'; // Blue
+    dragPreview.style.color = 'white';
+    dragPreview.style.display = 'flex';
+    dragPreview.style.flexDirection = 'column';
+    dragPreview.style.alignItems = 'center';
+    dragPreview.style.justifyContent = 'center';
+    dragPreview.style.borderRadius = '8px';
+    dragPreview.style.fontSize = '14px';
+    dragPreview.style.fontWeight = '600';
+    dragPreview.style.fontFamily = 'system-ui, -apple-system, sans-serif';
+    dragPreview.style.boxShadow = '0 4px 6px rgba(0,0,0,0.1)';
+    dragPreview.style.position = 'fixed'; // Changed to fixed
+    dragPreview.style.top = '0px'; // Visible on screen
+    dragPreview.style.left = '0px';
+    dragPreview.style.zIndex = '99999';
+    dragPreview.style.pointerEvents = 'none';
+    dragPreview.innerHTML = '<div style="font-size: 24px; margin-bottom: 4px;">📸</div><div>Moving...</div>';
+
+    document.body.appendChild(dragPreview);
+    console.log('[Gallery] Drag preview element created and appended');
+
+    // Set as drag image - center it on cursor
+    try {
+      e.dataTransfer.setDragImage(dragPreview, 60, 40);
+      console.log('[Gallery] setDragImage called successfully');
+    } catch (err) {
+      console.error('[Gallery] setDragImage failed:', err);
+    }
+
+    // Clean up after drag starts
+    setTimeout(() => {
+      if (document.body.contains(dragPreview)) {
+        document.body.removeChild(dragPreview);
+        console.log('[Gallery] Drag preview element removed');
+      }
+    }, 50);
+  };
+
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     const now = new Date();
@@ -296,6 +339,7 @@ export function Gallery({ searchQuery, activeView }: GalleryProps) {
             onDelete={deleteScreenshot}
             getImageUrl={getImageUrl}
             formatDate={formatDate}
+            onDragStart={handleDragStart}
           />
         ))}
       </div>
@@ -318,6 +362,7 @@ function ScreenshotCard({
   onDelete,
   getImageUrl,
   formatDate,
+  onDragStart,
 }: {
   screenshot: Screenshot;
   onSelect: (screenshot: Screenshot) => void;
@@ -325,6 +370,7 @@ function ScreenshotCard({
   onDelete: (screenshot: Screenshot, e: React.MouseEvent) => void;
   getImageUrl: (path: string) => Promise<string>;
   formatDate: (date: string) => string;
+  onDragStart: (e: React.DragEvent, screenshot: Screenshot) => void;
 }) {
   const [imageUrl, setImageUrl] = useState<string>('');
 
@@ -335,9 +381,13 @@ function ScreenshotCard({
   return (
     <div
       onClick={() => onSelect(screenshot)}
-      className="group relative bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-lg hover:scale-[1.02] transition-all cursor-pointer"
+      draggable
+      onDragStart={(e) => onDragStart(e, screenshot)}
+      className="group relative bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-lg hover:scale-[1.02] transition-all cursor-move"
     >
-      <div className="aspect-video bg-gray-100 overflow-hidden">
+      <div
+        className="aspect-video bg-gray-100 overflow-hidden"
+      >
         {imageUrl ? (
           <img
             src={imageUrl}

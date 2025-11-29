@@ -37,6 +37,18 @@ let mainWindow;
 let tray;
 let currentUser = null;
 let isCapturing = false;
+let isQuitting = false; // Flag to track if app is actually quitting
+
+// Enforce menu bar only mode (hidden from dock) immediately
+if (process.platform === 'darwin') {
+  try {
+    app.setActivationPolicy('accessory');
+    app.dock.hide();
+    console.log('Activation policy set to accessory and dock hidden');
+  } catch (e) {
+    console.error('Failed to set activation policy:', e);
+  }
+}
 
 /* ====================== LOG helper ====================== */
 function sendLog(msg, level = 'info') {
@@ -103,6 +115,7 @@ function createWindow() {
     width: 1400,
     height: 900,
     show: false,
+    skipTaskbar: true, // Help prevent dock icon
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -123,10 +136,18 @@ function createWindow() {
     });
   }
 
-  mainWindow.once('ready-to-show', () => mainWindow.show());
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
+    if (process.platform === 'darwin') app.dock.hide();
+  });
 
   mainWindow.on('close', (event) => {
-    app.quit();
+    // On macOS, if not quitting, hide the window instead of closing
+    if (process.platform === 'darwin' && !isQuitting) {
+      event.preventDefault();
+      mainWindow.hide();
+    }
+    return false;
   });
 }
 
@@ -332,9 +353,11 @@ function createScreenshotPopup(filePath) {
     x: Math.floor((screenWidth - w) / 2),
     y: Math.floor((screenHeight - h) / 2),
     frame: false,
+    type: 'panel', // Use panel type for accessory app behavior
     resizable: true,
     alwaysOnTop: false,
     show: false,
+    skipTaskbar: true, // Help prevent dock icon on some platforms
     backgroundColor: '#1e1e1e',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -355,6 +378,7 @@ function createScreenshotPopup(filePath) {
   popupWindow.once('ready-to-show', () => {
     if (!popupWindow.isDestroyed()) {
       popupWindow.show();
+      if (process.platform === 'darwin') app.dock.hide();
       // Send init data
       // Note: We use the same channel name but now it's handled by Editor.tsx via preload
       // We need to make sure preload.js exposes 'onInit' or similar, OR we use the existing IPC
@@ -698,6 +722,17 @@ app.whenReady().then(async () => {
   await checkPermissions();
 
   initDatabase();
+  // Register local-file protocol for loading images
+  const { protocol } = require('electron');
+  protocol.registerFileProtocol('local-file', (request, callback) => {
+    const url = request.url.replace('local-file://', '');
+    try {
+      return callback(decodeURIComponent(url));
+    } catch (error) {
+      console.error('Failed to register protocol', error);
+    }
+  });
+
   createWindow();
   createTray();
   registerGlobalShortcuts();
@@ -717,7 +752,22 @@ app.whenReady().then(async () => {
     }, 800);
   }
 
-  app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+  app.on('activate', () => {
+    if (process.platform === 'darwin') app.dock.hide();
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
+
+  // Persistent dock hiding loop (hack for stubborn dock icon)
+  if (process.platform === 'darwin') {
+    setInterval(() => {
+      app.dock.hide();
+    }, 1000);
+  }
+});
+
+// Handle app quit properly
+app.on('before-quit', () => {
+  isQuitting = true;
 });
 
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
@@ -907,6 +957,78 @@ ipcMain.handle('db:import', async (_e, importPath) => {
     return { data: true, error: null };
   } catch (error) {
     return { data: null, error: error.message };
+  }
+});
+
+
+
+/* ====================== Folder Handlers ====================== */
+ipcMain.handle('folder:list', async () => {
+  try {
+    const db = getDatabase();
+    // Seed default folders if empty
+    const count = db.prepare('SELECT COUNT(*) as count FROM folders').get().count;
+    if (count === 0) {
+      const defaults = ['General', 'Project A', 'Project B'];
+      const insert = db.prepare('INSERT INTO folders (id, name, icon, color) VALUES (?, ?, ?, ?)');
+      defaults.forEach((name, i) => {
+        const colors = ['#6366f1', '#10b981', '#f59e0b'];
+        insert.run(crypto.randomUUID(), name, 'folder', colors[i % colors.length]);
+      });
+    }
+
+    // Get folders with screenshot counts
+    const folders = db.prepare(`
+      SELECT f.*, COUNT(s.id) as screenshot_count 
+      FROM folders f 
+      LEFT JOIN screenshots s ON s.folder_id = f.id 
+      GROUP BY f.id
+      ORDER BY f.name ASC
+    `).all();
+    return { data: folders, error: null };
+  } catch (e) {
+    return { data: null, error: e.message };
+  }
+});
+
+ipcMain.handle('folder:create', async (_e, name) => {
+  try {
+    const db = getDatabase();
+    const id = crypto.randomUUID();
+    db.prepare('INSERT INTO folders (id, name) VALUES (?, ?)').run(id, name);
+    return { data: { id, name }, error: null };
+  } catch (e) {
+    return { data: null, error: e.message };
+  }
+});
+
+ipcMain.handle('folder:rename', async (_e, { id, name }) => {
+  try {
+    const db = getDatabase();
+    db.prepare('UPDATE folders SET name = ? WHERE id = ?').run(name, id);
+    return { data: true, error: null };
+  } catch (e) {
+    return { data: null, error: e.message };
+  }
+});
+
+ipcMain.handle('folder:delete', async (_e, id) => {
+  try {
+    const db = getDatabase();
+    db.prepare('DELETE FROM folders WHERE id = ?').run(id);
+    return { data: true, error: null };
+  } catch (e) {
+    return { data: null, error: e.message };
+  }
+});
+
+ipcMain.handle('screenshot:move', async (_e, { screenshotId, folderId }) => {
+  try {
+    const db = getDatabase();
+    db.prepare('UPDATE screenshots SET folder_id = ? WHERE id = ?').run(folderId, screenshotId);
+    return { data: true, error: null };
+  } catch (e) {
+    return { data: null, error: e.message };
   }
 });
 

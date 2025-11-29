@@ -47,7 +47,10 @@
       "entitlements": "entitlements.mac.plist",
       "entitlementsInherit": "entitlements.mac.plist",
       "gatekeeperAssess": false,
-      "identity": "Taufiq Ichwanusofa (292P5QPB73)"
+      "identity": "Taufiq Ichwanusofa (292P5QPB73)",
+      "extendInfo": {
+        "LSUIElement": true
+      }
     },
     "afterSign": "scripts/notarize.js",
     "dmg": {

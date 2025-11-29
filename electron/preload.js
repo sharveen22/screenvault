@@ -69,6 +69,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     import: (importPath) => ipcRenderer.invoke('db:import', importPath),
     getPath: () => ipcRenderer.invoke('db:get-path'),
   },
+  folder: {
+    list: () => ipcRenderer.invoke('folder:list'),
+    create: (name) => ipcRenderer.invoke('folder:create', name),
+    rename: (id, name) => ipcRenderer.invoke('folder:rename', { id, name }),
+    delete: (id) => ipcRenderer.invoke('folder:delete', id),
+    moveScreenshot: (screenshotId, folderId) => ipcRenderer.invoke('screenshot:move', { screenshotId, folderId }),
+  },
   file: {
     delete: (filePath) => ipcRenderer.invoke('file:delete', filePath),
     read: (filePath) => ipcRenderer.invoke('file:read', filePath),
