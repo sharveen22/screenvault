@@ -39,16 +39,6 @@ let currentUser = null;
 let isCapturing = false;
 let isQuitting = false; // Flag to track if app is actually quitting
 
-// Enforce menu bar only mode (hidden from dock) immediately
-if (process.platform === 'darwin') {
-  try {
-    app.setActivationPolicy('accessory');
-    app.dock.hide();
-    console.log('Activation policy set to accessory and dock hidden');
-  } catch (e) {
-    console.error('Failed to set activation policy:', e);
-  }
-}
 
 /* ====================== LOG helper ====================== */
 function sendLog(msg, level = 'info') {
@@ -138,7 +128,7 @@ function createWindow() {
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
-    if (process.platform === 'darwin') app.dock.hide();
+
   });
 
   mainWindow.on('close', (event) => {
@@ -378,7 +368,7 @@ function createScreenshotPopup(filePath) {
   popupWindow.once('ready-to-show', () => {
     if (!popupWindow.isDestroyed()) {
       popupWindow.show();
-      if (process.platform === 'darwin') app.dock.hide();
+
       // Send init data
       // Note: We use the same channel name but now it's handled by Editor.tsx via preload
       // We need to make sure preload.js exposes 'onInit' or similar, OR we use the existing IPC
@@ -753,16 +743,15 @@ app.whenReady().then(async () => {
   }
 
   app.on('activate', () => {
-    if (process.platform === 'darwin') app.dock.hide();
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    // On macOS, clicking dock icon should show the window
+    if (mainWindow) {
+      mainWindow.show();
+    } else {
+      createWindow();
+    }
   });
 
-  // Persistent dock hiding loop (hack for stubborn dock icon)
-  if (process.platform === 'darwin') {
-    setInterval(() => {
-      app.dock.hide();
-    }, 1000);
-  }
+
 });
 
 // Handle app quit properly
