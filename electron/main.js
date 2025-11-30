@@ -532,58 +532,103 @@ async function captureWithSystem() {
   return await linuxCaptureFile();
 }
 
-// macOS: clipboard-first (screencapture -ci), fallback file (screencapture -i -t png tmp)
+// macOS: clipboard-first (screencapture -ci)
 function macCaptureDualPath() {
   return new Promise((resolve) => {
     sendLog('macOS: starting screencapture -ci (clipboard mode)');
     clipboard.clear();
     const p = spawn('screencapture', ['-ci'], { stdio: 'ignore' });
 
-    p.on('error', (err) => { sendLog(`screencapture spawn error: ${err}`, 'error'); resolve(null); });
+    let processExited = false;
+    let exitCode = null;
+    let resolved = false;
+    let postExitAttempts = 0;
+    const MAX_POST_EXIT_ATTEMPTS = 8; // ~1 second max wait after exit
 
-    const started = Date.now();
-    const timeoutMs = 15000;
+    const safeResolve = (value) => {
+      if (!resolved) {
+        resolved = true;
+        resolve(value);
+      }
+    };
+
+    // Hard timeout safety net (30s)
+    setTimeout(() => {
+      if (!resolved) {
+        sendLog('macOS: Hard timeout reached in capture', 'error');
+        safeResolve(null);
+      }
+    }, 30000);
+
+    p.on('error', (err) => {
+      sendLog(`screencapture spawn error: ${err}`, 'error');
+      processExited = true;
+      safeResolve(null);
+    });
+
+    p.on('exit', (code) => {
+      processExited = true;
+      exitCode = code;
+      sendLog(`screencapture exited with code ${code}`);
+
+      // If user cancelled (non-zero exit code), stop immediately
+      if (code !== 0) {
+        sendLog('User cancelled screenshot (Escape pressed)');
+        safeResolve(null);
+      }
+    });
+
     const poll = () => {
+      // Stop polling if already resolved
+      if (resolved) {
+        return;
+      }
+
+      // Stop polling if process exited with error
+      if (processExited && exitCode !== 0) {
+        return;
+      }
+
+      // If process exited successfully but no clipboard content yet, wait a bit more
+      if (processExited && exitCode === 0) {
+        postExitAttempts++;
+        if (postExitAttempts > MAX_POST_EXIT_ATTEMPTS) {
+          sendLog('macOS: No clipboard content found after process exit', 'error');
+          safeResolve(null);
+          return;
+        }
+
+        try {
+          const img = clipboard.readImage();
+          if (img && !img.isEmpty()) {
+            const buf = img.toPNG();
+            sendLog(`macOS: clipboard image detected (bytes=${buf.length}). Saving...`);
+            const out = saveBufferToFile(buf);
+            return safeResolve(out);
+          }
+        } catch (e) {
+          sendLog(`macOS: clipboard read error: ${e}`, 'error');
+          return safeResolve(null);
+        }
+
+        // Give it a few more attempts after process exit
+        setTimeout(poll, 120);
+        return;
+      }
+
       try {
         const img = clipboard.readImage();
         if (img && !img.isEmpty()) {
           const buf = img.toPNG();
           sendLog(`macOS: clipboard image detected (bytes=${buf.length}). Saving...`);
           const out = saveBufferToFile(buf);
-          return resolve(out);
+          return safeResolve(out);
         }
       } catch (e) {
         sendLog(`macOS: clipboard read error: ${e}`, 'error');
-        return resolve(null);
+        return safeResolve(null);
       }
-      if (Date.now() - started > timeoutMs) {
-        sendLog('macOS: clipboard timeout, falling back to file mode');
-        const tmp = path.join(app.getPath('temp'), `sv_${Date.now()}.png`);
-        const args = ['-i', '-x', '-r', '-t', 'png', tmp];
-        sendLog(`macOS fallback: screencapture ${args.join(' ')}`);
-        const pf = spawn('screencapture', args, { stdio: 'ignore' });
-        pf.on('error', (err) => { sendLog(`fallback error: ${err}`, 'error'); resolve(null); });
-        pf.on('exit', (code) => {
-          sendLog(`fallback exit code=${code}`);
-          if (code !== 0) return resolve(null);
-          try {
-            if (fs.existsSync(tmp) && fs.statSync(tmp).size > 0) {
-              const out = path.join(screenshotsDir(), timestampName());
-              sendLog(`Fallback: moving ${tmp} -> ${out}`);
-              fs.renameSync(tmp, out);
-              sendLog(`Saved: ${out}`);
-              resolve(out);
-            } else {
-              sendLog('Fallback: tmp missing or zero size', 'error');
-              resolve(null);
-            }
-          } catch (e) {
-            sendLog(`Fallback save error: ${e}`, 'error');
-            resolve(null);
-          }
-        });
-        return;
-      }
+
       setTimeout(poll, 120);
     };
     poll();
