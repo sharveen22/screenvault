@@ -79,5 +79,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   file: {
     delete: (filePath) => ipcRenderer.invoke('file:delete', filePath),
     read: (filePath) => ipcRenderer.invoke('file:read', filePath),
+    reveal: (filePath) => ipcRenderer.invoke('file:reveal', filePath),
+    share: (filePath) => ipcRenderer.invoke('file:share', filePath),
   },
 });

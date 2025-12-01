@@ -25,6 +25,8 @@ declare global {
       file: {
         delete: (filePath: string) => Promise<{ data: string; error: string | null }>;
         read: (filePath: string) => Promise<{ data: string; error: string | null }>;
+        reveal: (filePath: string) => Promise<{ data: boolean; error: string | null }>;
+        share: (filePath: string) => Promise<{ data: boolean; error: string | null }>;
       };
     };
   }
