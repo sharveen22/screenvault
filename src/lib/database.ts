@@ -271,6 +271,7 @@ export type Screenshot = {
   ai_tags: string[];
   custom_tags: string[];
   user_notes: string;
+  note_history: Array<{ text: string; timestamp: string }>;
   is_favorite: boolean;
   is_archived: boolean;
   folder_id: string | null;

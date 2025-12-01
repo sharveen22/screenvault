@@ -454,6 +454,12 @@ export function Editor() {
         }
     };
 
+    const handleShare = () => {
+        if (canvasRef.current) {
+            window.electronAPI.share(canvasRef.current.toDataURL());
+        }
+    };
+
     const handleDone = () => {
         handleSave();
         window.electronAPI.close();
@@ -493,6 +499,9 @@ export function Editor() {
 
     return (
         <div className="h-screen w-screen bg-[#1e1e1e] flex flex-col text-white overflow-hidden">
+            {/* Window Drag Handle */}
+            <div className="h-3 bg-[#252525] w-full shrink-0" style={{ WebkitAppRegion: 'drag' } as any} />
+
             {/* Toolbar */}
             <div className="h-14 bg-[#252525] flex items-center justify-between px-4 border-b border-[#333] select-none shadow-md" style={{ WebkitAppRegion: 'drag' } as any}>
                 <div className="flex items-center gap-3" style={{ WebkitAppRegion: 'no-drag' } as any}>
@@ -552,7 +561,7 @@ export function Editor() {
                     <IconButton icon={<Trash2 size={18} />} onClick={() => window.electronAPI.trash()} className="hover:bg-red-900/30 text-red-400" title="Delete File" />
                     <div className="w-px h-6 bg-[#333]" />
                     <IconButton icon={<Copy size={18} />} onClick={handleCopy} title="Copy" />
-                    <IconButton icon={<Share2 size={18} />} onClick={() => window.electronAPI.share()} title="Share" />
+                    <IconButton icon={<Share2 size={18} />} onClick={handleShare} title="Share" />
                     <button onClick={handleDone} className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-md text-sm font-medium transition-colors shadow-sm ml-2">
                         Done
                     </button>
