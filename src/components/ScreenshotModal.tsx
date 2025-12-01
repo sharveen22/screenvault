@@ -10,6 +10,7 @@ import {
   Share2,
   Trash2,
   Image as ImageIcon,
+  Plus,
 } from 'lucide-react';
 
 interface ScreenshotModalProps {
@@ -19,10 +20,11 @@ interface ScreenshotModalProps {
 }
 
 export function ScreenshotModal({ screenshot, onClose, onUpdate }: ScreenshotModalProps) {
-  const [notes, setNotes] = useState(screenshot.user_notes);
   const [newTag, setNewTag] = useState('');
   const [isFavorite, setIsFavorite] = useState(screenshot.is_favorite);
   const [imageUrl, setImageUrl] = useState<string>('');
+  const [newNote, setNewNote] = useState('');
+  const [noteHistory, setNoteHistory] = useState<Array<{ text: string; timestamp: string }>>(screenshot.note_history || []);
 
   useEffect(() => {
     loadImage();
@@ -33,9 +35,20 @@ export function ScreenshotModal({ screenshot, onClose, onUpdate }: ScreenshotMod
     setIsFavorite(screenshot.is_favorite);
   }, [screenshot.is_favorite]);
 
+  useEffect(() => {
+    setNoteHistory(screenshot.note_history || []);
+  }, [screenshot.note_history]);
+
   const loadImage = async () => {
     const { data } = await window.electronAPI!.file.read(screenshot.storage_path);
     setImageUrl(`data:image/png;base64,${data}`);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, action: () => void) => {
+    if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+      e.preventDefault();
+      action();
+    }
   };
 
   const toggleFavorite = async () => {
@@ -59,16 +72,41 @@ export function ScreenshotModal({ screenshot, onClose, onUpdate }: ScreenshotMod
     }
   };
 
-  const saveNotes = async () => {
+  const addNote = async () => {
+    if (!newNote.trim()) return;
+
+    const newNoteEntry = {
+      text: newNote.trim(),
+      timestamp: new Date().toISOString()
+    };
+
+    const updatedHistory = [newNoteEntry, ...noteHistory];
+
     const { error } = await db
       .from('screenshots')
-      .update({ user_notes: notes })
+      .update({ note_history: updatedHistory })
       .eq('id', screenshot.id)
       .select();
 
     if (!error) {
+      setNoteHistory(updatedHistory);
+      setNewNote('');
       onUpdate();
     }
+  };
+
+  const formatNoteDate = (timestamp: string) => {
+    let normalized = timestamp;
+    if (!timestamp.includes('Z') && !timestamp.includes('+')) {
+      normalized = timestamp.replace(' ', 'T') + 'Z';
+    }
+    return new Date(normalized).toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
   };
 
   const addTag = async () => {
@@ -113,7 +151,12 @@ export function ScreenshotModal({ screenshot, onClose, onUpdate }: ScreenshotMod
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString('en-US', {
+    let normalized = dateString;
+    // If it looks like "YYYY-MM-DD HH:MM:SS" (common SQL default), treat as UTC
+    if (!dateString.includes('Z') && !dateString.includes('+')) {
+      normalized = dateString.replace(' ', 'T') + 'Z';
+    }
+    return new Date(normalized).toLocaleString('en-US', {
       year: 'numeric',
       month: 'long',
       day: 'numeric',
@@ -188,7 +231,7 @@ export function ScreenshotModal({ screenshot, onClose, onUpdate }: ScreenshotMod
             <div>
               <div className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-3">
                 <FileText className="w-4 h-4" />
-                Metadata
+                Details
               </div>
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
@@ -209,12 +252,6 @@ export function ScreenshotModal({ screenshot, onClose, onUpdate }: ScreenshotMod
                     {screenshot.file_type.split('/')[1]}
                   </span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Source:</span>
-                  <span className="text-gray-900 font-medium capitalize">
-                    {screenshot.source}
-                  </span>
-                </div>
                 <div className="flex items-start justify-between">
                   <span className="text-gray-500">Uploaded:</span>
                   <span className="text-gray-900 font-medium text-right">
@@ -224,22 +261,7 @@ export function ScreenshotModal({ screenshot, onClose, onUpdate }: ScreenshotMod
               </div>
             </div>
 
-            {screenshot.ocr_text && (
-              <div>
-                <div className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-3">
-                  <FileText className="w-4 h-4" />
-                  OCR Text
-                  {screenshot.ocr_confidence && (
-                    <span className="text-xs text-gray-500">
-                      ({(screenshot.ocr_confidence * 100).toFixed(0)}% confidence)
-                    </span>
-                  )}
-                </div>
-                <div className="text-sm text-gray-700 bg-gray-50 p-3 rounded-lg max-h-40 overflow-y-auto">
-                  {screenshot.ocr_text}
-                </div>
-              </div>
-            )}
+
 
             {screenshot.ai_description && (
               <div>
@@ -277,7 +299,7 @@ export function ScreenshotModal({ screenshot, onClose, onUpdate }: ScreenshotMod
                   type="text"
                   value={newTag}
                   onChange={(e) => setNewTag(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && addTag()}
+                  onKeyDown={(e) => handleKeyDown(e, addTag)}
                   placeholder="Add tag..."
                   className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
                 />
@@ -295,14 +317,41 @@ export function ScreenshotModal({ screenshot, onClose, onUpdate }: ScreenshotMod
                 <FileText className="w-4 h-4" />
                 Notes
               </div>
-              <textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                onBlur={saveNotes}
-                placeholder="Add notes about this screenshot..."
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-none"
-                rows={4}
-              />
+
+              {/* Add Note Input */}
+              <div className="flex gap-2 mb-3">
+                <input
+                  type="text"
+                  value={newNote}
+                  onChange={(e) => setNewNote(e.target.value)}
+                  onKeyDown={(e) => handleKeyDown(e, addNote)}
+                  placeholder="Add a note..."
+                  className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                />
+                <button
+                  onClick={addNote}
+                  className="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors flex items-center gap-1"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add
+                </button>
+              </div>
+
+              {/* Note History List */}
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {noteHistory.length === 0 && (
+                  <p className="text-sm text-gray-500 text-center py-4">No notes yet. Add your first note above!</p>
+                )}
+                {noteHistory.map((note, index) => (
+                  <div
+                    key={index}
+                    className="p-3 bg-gray-50 rounded-lg border border-gray-200"
+                  >
+                    <p className="text-sm text-gray-700 mb-1">{note.text}</p>
+                    <p className="text-xs text-gray-500">{formatNoteDate(note.timestamp)}</p>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>

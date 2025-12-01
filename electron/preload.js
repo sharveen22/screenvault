@@ -52,7 +52,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   copyData: (dataUrl) => ipcRenderer.send('popup:copy-data', dataUrl),
   save: (dataUrl) => ipcRenderer.send('popup:save', dataUrl),
   trash: () => ipcRenderer.send('popup:trash'),
-  share: () => ipcRenderer.send('popup:share'),
+  share: (dataUrl) => ipcRenderer.send('popup:share', dataUrl),
   close: () => ipcRenderer.send('popup:close'),
 
   // auth / db / file – tetap sama

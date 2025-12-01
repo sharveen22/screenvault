@@ -470,24 +470,44 @@ ipcMain.on('popup:trash', () => {
   if (popupWindow && !popupWindow.isDestroyed()) popupWindow.close();
 });
 
-ipcMain.on('popup:share', () => {
-  if (!lastScreenshotPath) return;
+ipcMain.on('popup:share', (_event, dataUrl) => {
+  let filePathToShare = lastScreenshotPath;
+  let isTemp = false;
+
+  if (dataUrl) {
+    try {
+      const image = nativeImage.createFromDataURL(dataUrl);
+      const tempPath = path.join(app.getPath('temp'), `share-${Date.now()}.png`);
+      fs.writeFileSync(tempPath, image.toPNG());
+      filePathToShare = tempPath;
+      isTemp = true;
+    } catch (e) {
+      sendLog(`Error creating temp file for share: ${e}`, 'error');
+    }
+  }
+
+  if (!filePathToShare) return;
 
   if (process.platform === 'darwin') {
-    // On macOS, we can't easily remove the "Share >" submenu without native modules.
-    // However, we can make the menu context-aware.
     const shareMenu = Menu.buildFromTemplate([
       {
         label: 'Share Screenshot',
         role: 'shareMenu',
         sharingItem: {
-          filePaths: [lastScreenshotPath]
+          filePaths: [filePathToShare]
         }
       }
     ]);
     shareMenu.popup({ window: popupWindow });
+
+    // Clean up temp file after menu closes (approximate)
+    if (isTemp) {
+      setTimeout(() => {
+        try { fs.unlinkSync(filePathToShare); } catch { }
+      }, 60000); // 1 minute delay to ensure share service has accessed it
+    }
   } else {
-    shell.showItemInFolder(lastScreenshotPath);
+    shell.showItemInFolder(filePathToShare);
   }
 });
 
@@ -899,6 +919,7 @@ ipcMain.handle('db:query', async (_e, { table, operation, data, where }) => {
           ...row,
           ai_tags: row.ai_tags ? JSON.parse(row.ai_tags) : [],
           custom_tags: row.custom_tags ? JSON.parse(row.custom_tags) : [],
+          note_history: row.note_history ? JSON.parse(row.note_history) : [],
           is_favorite: !!row.is_favorite,
           is_archived: !!row.is_archived,
           onboarding_completed: !!row.onboarding_completed,
@@ -915,6 +936,7 @@ ipcMain.handle('db:query', async (_e, { table, operation, data, where }) => {
       const d2 = { ...data };
       if (d2.ai_tags) d2.ai_tags = JSON.stringify(d2.ai_tags);
       if (d2.custom_tags) d2.custom_tags = JSON.stringify(d2.custom_tags);
+      if (d2.note_history) d2.note_history = JSON.stringify(d2.note_history);
       if (typeof d2.is_favorite === 'boolean') d2.is_favorite = d2.is_favorite ? 1 : 0;
       if (typeof d2.is_archived === 'boolean') d2.is_archived = d2.is_archived ? 1 : 0;
 
@@ -930,6 +952,7 @@ ipcMain.handle('db:query', async (_e, { table, operation, data, where }) => {
       const d2 = { ...data };
       if (d2.ai_tags) d2.ai_tags = JSON.stringify(d2.ai_tags);
       if (d2.custom_tags) d2.custom_tags = JSON.stringify(d2.custom_tags);
+      if (d2.note_history) d2.note_history = JSON.stringify(d2.note_history);
       if (typeof d2.is_favorite === 'boolean') d2.is_favorite = d2.is_favorite ? 1 : 0;
 
       db.prepare(q).run(...Object.values(d2), ...Object.values(where));

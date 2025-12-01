@@ -10,7 +10,7 @@ let dbPath;
 
 function getLocalDatabasePath() {
   let dbFolder;
-  
+
   if (app.isPackaged) {
     // Untuk aplikasi yang sudah di-build, gunakan userData directory
     dbFolder = path.join(app.getPath('userData'), 'data');
@@ -33,10 +33,10 @@ function getLocalDatabasePath() {
 
 function initDatabase() {
   dbPath = getLocalDatabasePath();
-  
+
   // Cek apakah database sudah ada
   const dbExists = fs.existsSync(dbPath);
-  
+
   console.log('Initializing database at:', dbPath);
   console.log('Database exists:', dbExists);
 
@@ -47,10 +47,10 @@ function initDatabase() {
 
   // Inisialisasi database dengan migrasi
   initializeDatabaseSchema();
-  
+
   // Set metadata untuk database
   setDatabaseMetadata();
-  
+
   console.log('Database initialized successfully at:', dbPath);
   return db;
 }
@@ -97,7 +97,7 @@ function setDatabaseVersion(version) {
 
 function createInitialSchema() {
   console.log('Creating initial database schema...');
-  
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS folders (
       id TEXT PRIMARY KEY,
@@ -144,22 +144,22 @@ function setDatabaseMetadata() {
   // Set metadata untuk database
   const installId = crypto.randomUUID();
   const installDate = new Date().toISOString();
-  
+
   db.prepare(`
     INSERT OR REPLACE INTO database_metadata (key, value) 
     VALUES ('install_id', ?)
   `).run(installId);
-  
+
   db.prepare(`
     INSERT OR REPLACE INTO database_metadata (key, value) 
     VALUES ('install_date', ?)
   `).run(installDate);
-  
+
   db.prepare(`
     INSERT OR REPLACE INTO database_metadata (key, value) 
     VALUES ('app_version', ?)
   `).run(app.getVersion());
-  
+
   console.log('Database metadata set - Install ID:', installId);
 }
 
@@ -178,6 +178,34 @@ function runMigrations(currentVersion) {
           );
         `);
       }
+    },
+    {
+      version: '1.0.2',
+      description: 'Add note_history column to screenshots table',
+      up: () => {
+        // Check if column exists first
+        const columns = db.prepare("PRAGMA table_info(screenshots)").all();
+        const hasNoteHistory = columns.some(col => col.name === 'note_history');
+
+        if (!hasNoteHistory) {
+          db.exec(`ALTER TABLE screenshots ADD COLUMN note_history TEXT DEFAULT '[]';`);
+          console.log('Added note_history column to screenshots table');
+
+          // Migrate existing user_notes to note_history
+          const screenshots = db.prepare('SELECT id, user_notes, created_at FROM screenshots WHERE user_notes != \'\'').all();
+          const updateStmt = db.prepare('UPDATE screenshots SET note_history = ? WHERE id = ?');
+
+          screenshots.forEach(screenshot => {
+            const noteHistory = [{
+              text: screenshot.user_notes,
+              timestamp: screenshot.created_at
+            }];
+            updateStmt.run(JSON.stringify(noteHistory), screenshot.id);
+          });
+
+          console.log(`Migrated ${screenshots.length} existing notes to note_history`);
+        }
+      }
     }
   ];
 
@@ -192,10 +220,10 @@ function runMigrations(currentVersion) {
 
 function shouldRunMigration(currentVersion, targetVersion) {
   if (!currentVersion) return false;
-  
+
   const current = parseVersion(currentVersion);
   const target = parseVersion(targetVersion);
-  
+
   return current < target;
 }
 
@@ -210,14 +238,14 @@ function getDatabase() {
 
 function getDatabaseInfo() {
   if (!db) throw new Error('Database not initialized');
-  
+
   const metadata = db.prepare('SELECT * FROM database_metadata').all();
   const info = {};
-  
+
   metadata.forEach(row => {
     info[row.key] = row.value;
   });
-  
+
   return {
     path: dbPath,
     version: info.version || 'unknown',
@@ -230,7 +258,7 @@ function getDatabaseInfo() {
 
 function exportDatabase(exportPath) {
   if (!db) throw new Error('Database not initialized');
-  
+
   const exportData = {
     metadata: db.prepare('SELECT * FROM database_metadata').all(),
     folders: db.prepare('SELECT * FROM folders').all(),
@@ -238,7 +266,7 @@ function exportDatabase(exportPath) {
     appSettings: db.prepare('SELECT * FROM app_settings').all(),
     exportDate: new Date().toISOString()
   };
-  
+
   fs.writeFileSync(exportPath, JSON.stringify(exportData, null, 2));
   console.log('Database exported to:', exportPath);
   return exportPath;
@@ -248,9 +276,9 @@ function importDatabase(importPath) {
   if (!fs.existsSync(importPath)) {
     throw new Error('Import file not found');
   }
-  
+
   const importData = JSON.parse(fs.readFileSync(importPath, 'utf8'));
-  
+
   // Import data dengan transaction
   const transaction = db.transaction(() => {
     // Import folders
@@ -260,7 +288,7 @@ function importDatabase(importPath) {
         (id, name, parent_id, color, icon, screenshot_count, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?)
       `);
-      
+
       importData.folders.forEach(folder => {
         insertFolder.run(
           folder.id, folder.name, folder.parent_id,
@@ -268,7 +296,7 @@ function importDatabase(importPath) {
         );
       });
     }
-    
+
     // Import screenshots
     if (importData.screenshots) {
       const insertScreenshot = db.prepare(`
@@ -279,7 +307,7 @@ function importDatabase(importPath) {
          view_count, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
-      
+
       importData.screenshots.forEach(screenshot => {
         insertScreenshot.run(
           screenshot.id, screenshot.file_name, screenshot.file_size,
@@ -293,7 +321,7 @@ function importDatabase(importPath) {
       });
     }
   });
-  
+
   transaction();
   console.log('Database imported from:', importPath);
 }

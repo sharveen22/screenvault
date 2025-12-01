@@ -118,6 +118,7 @@ export function Gallery({ searchQuery, activeView, onDropSuccess }: GalleryProps
             s.ocr_text,
             s.ai_description,
             s.user_notes,
+            s.note_history?.map((n: any) => n.text).join(' ') || '',
           ].map(norm).join(' ');
 
           const tags = pickTags(s);
