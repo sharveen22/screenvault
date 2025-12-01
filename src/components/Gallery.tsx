@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { db, Screenshot } from '../lib/database';
-import { Star, Download, Share2, Trash2, Image as ImageIcon, RefreshCcw } from 'lucide-react';
+import { Star, FolderOpen, Share2, Trash2, Image as ImageIcon, RefreshCcw } from 'lucide-react';
 import { ScreenshotModal } from './ScreenshotModal';
 
 interface GalleryProps {
@@ -19,6 +19,16 @@ export function Gallery({ searchQuery, activeView, onDropSuccess }: GalleryProps
     console.log('searchQuery', searchQuery);
     loadScreenshots();
   }, [activeView, searchQuery]);
+
+  // Sync selectedScreenshot with updated list
+  useEffect(() => {
+    if (selectedScreenshot) {
+      const updated = screenshots.find((s) => s.id === selectedScreenshot.id);
+      if (updated && updated !== selectedScreenshot) {
+        setSelectedScreenshot(updated);
+      }
+    }
+  }, [screenshots]);
 
   const loadScreenshots = async () => {
     setLoading(true);
@@ -412,11 +422,25 @@ function ScreenshotCard({
               }`}
           />
         </button>
-        <button className="p-2 bg-white rounded-lg hover:bg-gray-100 transition-colors">
-          <Download className="w-5 h-5 text-gray-700" />
-        </button>
-        <button className="p-2 bg-white rounded-lg hover:bg-gray-100 transition-colors">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            window.electronAPI?.file.share(screenshot.storage_path);
+          }}
+          className="p-2 bg-white rounded-lg hover:bg-gray-100 transition-colors"
+          title="Share"
+        >
           <Share2 className="w-5 h-5 text-gray-700" />
+        </button>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            window.electronAPI?.file.reveal(screenshot.storage_path);
+          }}
+          className="p-2 bg-white rounded-lg hover:bg-gray-100 transition-colors"
+          title="Show in Finder"
+        >
+          <FolderOpen className="w-5 h-5 text-gray-700" />
         </button>
         <button
           onClick={(e) => onDelete(screenshot, e)}

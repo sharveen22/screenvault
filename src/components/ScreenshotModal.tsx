@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Screenshot, db } from '../lib/database';
 import {
   X,
-  Download,
+  FolderOpen,
   Star,
   Tag,
   FileText,
@@ -28,20 +28,33 @@ export function ScreenshotModal({ screenshot, onClose, onUpdate }: ScreenshotMod
     loadImage();
   }, [screenshot.storage_path]);
 
+  // Sync local state with prop updates
+  useEffect(() => {
+    setIsFavorite(screenshot.is_favorite);
+  }, [screenshot.is_favorite]);
+
   const loadImage = async () => {
     const { data } = await window.electronAPI!.file.read(screenshot.storage_path);
     setImageUrl(`data:image/png;base64,${data}`);
   };
 
   const toggleFavorite = async () => {
+    // Optimistic update
+    const nextState = !isFavorite;
+    setIsFavorite(nextState);
+
     const { error } = await db
       .from('screenshots')
-      .update({ is_favorite: !isFavorite })
+      .update({ is_favorite: nextState })
       .eq('id', screenshot.id)
       .select();
 
-    if (!error) {
-      setIsFavorite(!isFavorite);
+    if (error) {
+      // Revert on error
+      setIsFavorite(!nextState);
+      console.error('Failed to toggle favorite:', error);
+    } else {
+      // Sync parent on success
       onUpdate();
     }
   };
@@ -89,12 +102,7 @@ export function ScreenshotModal({ screenshot, onClose, onUpdate }: ScreenshotMod
     }
   };
 
-  const downloadScreenshot = () => {
-    const link = document.createElement('a');
-    link.href = imageUrl;
-    link.download = screenshot.file_name;
-    link.click();
-  };
+
 
   const deleteScreenshot = async () => {
     if (!confirm('Are you sure you want to delete this screenshot?')) return;
@@ -127,18 +135,22 @@ export function ScreenshotModal({ screenshot, onClose, onUpdate }: ScreenshotMod
               className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
             >
               <Star
-                className={`w-5 h-5 ${
-                  isFavorite ? 'fill-yellow-400 text-yellow-400' : 'text-gray-600'
-                }`}
+                className={`w-5 h-5 ${isFavorite ? 'fill-yellow-400 text-yellow-400' : 'text-gray-600'
+                  }`}
               />
             </button>
             <button
-              onClick={downloadScreenshot}
+              onClick={() => window.electronAPI?.file.reveal(screenshot.storage_path)}
               className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              title="Show in Finder"
             >
-              <Download className="w-5 h-5 text-gray-600" />
+              <FolderOpen className="w-5 h-5 text-gray-600" />
             </button>
-            <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+            <button
+              onClick={() => window.electronAPI?.file.share(screenshot.storage_path)}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              title="Share"
+            >
               <Share2 className="w-5 h-5 text-gray-600" />
             </button>
             <button

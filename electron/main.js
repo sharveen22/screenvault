@@ -954,6 +954,39 @@ ipcMain.handle('file:read', async (_e, filePath) => {
   try { return { data: fs.readFileSync(filePath).toString('base64'), error: null }; }
   catch (error) { return { data: null, error: error.message }; }
 });
+
+ipcMain.handle('file:reveal', async (_e, filePath) => {
+  try {
+    shell.showItemInFolder(filePath);
+    return { data: true, error: null };
+  } catch (error) {
+    return { data: null, error: error.message };
+  }
+});
+
+ipcMain.handle('file:share', async (_e, filePath) => {
+  try {
+    if (process.platform === 'darwin') {
+      const shareMenu = Menu.buildFromTemplate([
+        {
+          label: 'Share Screenshot',
+          role: 'shareMenu',
+          sharingItem: {
+            filePaths: [filePath]
+          }
+        }
+      ]);
+      shareMenu.popup({ window: mainWindow });
+      return { data: true, error: null };
+    } else {
+      shell.showItemInFolder(filePath);
+      return { data: true, error: null };
+    }
+  } catch (error) {
+    return { data: null, error: error.message };
+  }
+});
+
 ipcMain.handle('file:delete', async (_e, filePath) => new Promise((resolve, reject) => {
   fs.unlink(filePath, (err) => err ? reject(err) : resolve(true));
 }));
