@@ -322,17 +322,16 @@ export function Gallery({ searchQuery, activeView, onDropSuccess }: GalleryProps
     <>
       <div className="mb-6 flex items-center justify-between">
         <div className="">
-
-          <h2 className="text-2xl font-bold text-gray-900 mb-1">
+          <h2 className="text-2xl font-bold text-[#161419] mb-1 title-font">
             {activeView.charAt(0).toUpperCase() + activeView.slice(1)} Screenshots
           </h2>
-          <p className="text-gray-500">{screenshots.length} screenshots</p>
+          <p className="text-[#161419] opacity-60 subtitle-font">{screenshots.length} screenshots</p>
         </div>
 
         <div>
           <button
             onClick={loadScreenshots}
-            className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-sm rounded-lg flex items-center gap-2 transition"
+            className="px-3 py-1.5 bg-transparent border border-[#161419] text-[#161419] hover:bg-[#161419] hover:text-[#e9e6e4] text-sm rounded-none flex items-center gap-2 transition-all subtitle-font"
           >
             <RefreshCcw size={16} />
             Reload
@@ -394,10 +393,11 @@ function ScreenshotCard({
       onClick={() => onSelect(screenshot)}
       draggable
       onDragStart={(e) => onDragStart(e, screenshot)}
-      className="group relative bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-lg hover:scale-[1.02] transition-all cursor-move"
+      className="group relative bg-transparent border border-[#94918f] overflow-hidden hover:border-[#161419] transition-all cursor-move"
+      style={{ borderRadius: 0 }}
     >
       <div
-        className="aspect-video bg-gray-100 overflow-hidden"
+        className="aspect-video bg-[#dcd9d7] overflow-hidden relative"
       >
         {imageUrl ? (
           <img
@@ -411,57 +411,48 @@ function ScreenshotCard({
             <ImageIcon className="w-10 h-10 text-gray-400" />
           </div>
         )}
+
+        {/* Hover Overlay */}
+        <div className="absolute inset-0 bg-[#161419]/10 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+          {/* Actions can go here if needed, but keeping it clean for now */}
+        </div>
       </div>
 
-      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100">
+      <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
         <button
           onClick={(e) => onToggleFavorite(screenshot, e)}
-          className="p-2 bg-white rounded-lg hover:bg-gray-100 transition-colors"
+          className="p-1.5 bg-[#e9e6e4] border border-[#161419] text-[#161419] hover:bg-[#161419] hover:text-[#e9e6e4] transition-colors"
         >
-          <Star
-            className={`w-5 h-5 ${screenshot.is_favorite ? 'fill-yellow-400 text-yellow-400' : 'text-gray-700'
-              }`}
-          />
-        </button>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            window.electronAPI?.file.share(screenshot.storage_path);
-          }}
-          className="p-2 bg-white rounded-lg hover:bg-gray-100 transition-colors"
-          title="Share"
-        >
-          <Share2 className="w-5 h-5 text-gray-700" />
+          <Star className={`w-4 h-4 ${screenshot.is_favorite ? 'fill-[#161419]' : ''}`} />
         </button>
         <button
           onClick={(e) => {
             e.stopPropagation();
             window.electronAPI?.file.reveal(screenshot.storage_path);
           }}
-          className="p-2 bg-white rounded-lg hover:bg-gray-100 transition-colors"
-          title="Show in Finder"
+          className="p-1.5 bg-[#e9e6e4] border border-[#161419] text-[#161419] hover:bg-[#161419] hover:text-[#e9e6e4] transition-colors"
         >
-          <FolderOpen className="w-5 h-5 text-gray-700" />
+          <FolderOpen className="w-4 h-4" />
         </button>
         <button
           onClick={(e) => onDelete(screenshot, e)}
-          className="p-2 bg-white rounded-lg hover:bg-red-50 transition-colors"
+          className="p-1.5 bg-[#e9e6e4] border border-[#161419] text-[#161419] hover:bg-red-600 hover:text-white hover:border-red-600 transition-colors"
         >
-          <Trash2 className="w-5 h-5 text-red-600" />
+          <Trash2 className="w-4 h-4" />
         </button>
       </div>
 
       {screenshot.is_favorite && (
-        <div className="absolute top-3 right-3">
-          <Star className="w-5 h-5 fill-yellow-400 text-yellow-400" />
+        <div className="absolute top-2 left-2">
+          <Star className="w-4 h-4 fill-[#161419] text-[#161419]" />
         </div>
       )}
 
-      <div className="p-4">
-        <h3 className="font-medium text-gray-900 truncate mb-1">
+      <div className="p-3 border-t border-[#94918f] bg-[#e9e6e4]">
+        <h3 className="font-medium text-[#161419] truncate mb-1 subtitle-font text-sm">
           {screenshot.file_name}
         </h3>
-        <div className="flex items-center justify-between text-sm text-gray-500">
+        <div className="flex items-center justify-between text-xs text-[#161419] opacity-60 subtitle-font">
           <span>{formatDate(screenshot.created_at)}</span>
           <span>{(screenshot.file_size / 1024).toFixed(1)} KB</span>
         </div>
@@ -470,7 +461,7 @@ function ScreenshotCard({
             {screenshot.custom_tags.slice(0, 3).map((tag) => (
               <span
                 key={tag}
-                className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded"
+                className="text-[10px] px-1.5 py-0.5 border border-[#161419] text-[#161419] rounded-none uppercase tracking-wider"
               >
                 {tag}
               </span>
