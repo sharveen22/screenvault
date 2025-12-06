@@ -38,7 +38,7 @@
     ],
     "mac": {
       "category": "public.app-category.productivity",
-      "icon": "public/camera1.png",
+      "icon": "public/icon.icns",
       "target": [
         "dmg",
         "zip"
@@ -55,7 +55,7 @@
       "sign": false
     },
     "win": {
-      "icon": "public/camera1.png",
+      "icon": "public/icon.png",
       "target": [
         "nsis",
         "portable"
