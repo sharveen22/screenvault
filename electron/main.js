@@ -144,9 +144,9 @@ function createWindow() {
 function getTrayIconPath() {
   const isDev = process.env.NODE_ENV === 'development';
   if (isDev) {
-    return path.join(__dirname, '../public/camera2.png');
+    return path.join(__dirname, '../public/TrayIconTemplate.png');
   } else {
-    return path.join(app.getAppPath(), "dist", "camera2.png");
+    return path.join(app.getAppPath(), "dist", "TrayIconTemplate.png");
   }
 }
 
@@ -256,7 +256,7 @@ const USE_TEMPLATE = true; // set false kalau ikon full-color (tidak monochrome)
 
 function loadTrayIconCamera() {
   try {
-    const p = path.join(__dirname, '../public', 'camera1.png');
+    const p = path.join(__dirname, '../public', 'TrayIconTemplate.png');
     let img = nativeImage.createFromPath(p);
     if (img.isEmpty()) return nativeImage.createEmpty();
 
