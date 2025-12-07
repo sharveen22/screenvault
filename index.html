@@ -1256,55 +1256,45 @@
             // Submit to Google Forms
             const googleFormUrl = 'https://docs.google.com/forms/d/e/1FAIpQLSfjk_B2hKnYo-eVkY4aZy9LQ5NFcSANRXWm7Vz1A-dSZGFQHg/formResponse';
             
-            try {
-                // Submit directly to your Google Form
-                const formBody = new URLSearchParams();
-                // You need to inspect your Google Form to get the correct entry IDs
-                // For now, we'll submit to the form URL directly
-                
-                // Create an iframe to submit the form (workaround for CORS)
-                const iframe = document.createElement('iframe');
-                iframe.name = 'hidden_iframe';
-                iframe.style.display = 'none';
-                document.body.appendChild(iframe);
-                
-                const form = document.createElement('form');
-                form.method = 'POST';
-                form.action = googleFormUrl;
-                form.target = 'hidden_iframe';
-                
-                // Add form fields with your actual Google Form entry IDs
-                const fields = {
-                    'entry.359312210': formData.name,      // Name field
-                    'entry.1312783699': formData.email,    // Email field
-                    'entry.937815300': formData.usecase    // Use Case field
-                };
-                
-                for (const [key, value] of Object.entries(fields)) {
-                    const input = document.createElement('input');
-                    input.type = 'hidden';
-                    input.name = key;
-                    input.value = value;
-                    form.appendChild(input);
-                }
-                
-                document.body.appendChild(form);
-                form.submit();
-                
-                // Clean up
-                setTimeout(() => {
-                    document.body.removeChild(form);
-                    document.body.removeChild(iframe);
-                }, 1000);
-                
-            } catch (error) {
-                console.log('Form submission error:', error);
+            // Create an iframe to submit the form (workaround for CORS)
+            const iframe = document.createElement('iframe');
+            iframe.name = 'hidden_iframe';
+            iframe.style.display = 'none';
+            iframe.onload = function() {
+                console.log('Form submitted successfully to Google Forms');
+            };
+            document.body.appendChild(iframe);
+            
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = googleFormUrl;
+            form.target = 'hidden_iframe';
+            
+            // Add form fields with your actual Google Form entry IDs
+            const fields = {
+                'entry.359312210': formData.name,      // Name field
+                'entry.1312783699': formData.email,    // Email field
+                'entry.937815300': formData.usecase    // Use Case field
+            };
+            
+            for (const [key, value] of Object.entries(fields)) {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = key;
+                input.value = value || '';  // Ensure empty string if no value
+                form.appendChild(input);
             }
-
-            // Redirect to download page after a short delay
+            
+            document.body.appendChild(form);
+            
+            console.log('Submitting form to Google Forms with data:', formData);
+            form.submit();
+            
+            // Wait longer for form submission to complete before redirecting
             setTimeout(() => {
-                window.location.href = 'download.html';
-            }, 500);
+                console.log('Redirecting to download page...');
+                window.location.href = '/download';
+            }, 1500);
         });
     </script>
 </body>
