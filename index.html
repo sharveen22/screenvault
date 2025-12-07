@@ -1253,58 +1253,58 @@
                 timestamp: new Date().toISOString()
             };
 
-            // Submit to Google Forms
-            const googleFormUrl = 'https://docs.google.com/forms/d/e/1FAIpQLSfjk_B2hKnYo-eVkY4aZy9LQ5NFcSANRXWm7Vz1A-dSZGFQHg/formResponse';
+            console.log('Form data collected:', formData);
+
+            // Method 1: Try submitting to Google Forms via direct link
+            const googleFormUrl = 'https://docs.google.com/forms/d/e/1FAIpQLSfjk_B2hKnYo-eVkY4aZy9LQ5NFcSANRXWm7Vz1A-dSZGFQHg/viewform';
+            const prefillUrl = `${googleFormUrl}?usp=pp_url&entry.359312210=${encodeURIComponent(formData.name)}&entry.1312783699=${encodeURIComponent(formData.email)}&entry.937815300=${encodeURIComponent(formData.usecase)}&submit=Submit`;
             
+            // Open form in hidden iframe to submit
+            const iframe = document.createElement('iframe');
+            iframe.name = 'hidden_iframe';
+            iframe.style.display = 'none';
+            iframe.src = prefillUrl;
+            document.body.appendChild(iframe);
+            
+            console.log('Submitting to Google Forms...');
+            
+            // Also try the formResponse endpoint
             try {
-                // Submit directly to your Google Form
-                const formBody = new URLSearchParams();
-                // You need to inspect your Google Form to get the correct entry IDs
-                // For now, we'll submit to the form URL directly
+                const formResponseUrl = 'https://docs.google.com/forms/d/e/1FAIpQLSfjk_B2hKnYo-eVkY4aZy9LQ5NFcSANRXWm7Vz1A-dSZGFQHg/formResponse';
+                const formBody = new URLSearchParams({
+                    'entry.359312210': formData.name,
+                    'entry.1312783699': formData.email,
+                    'entry.937815300': formData.usecase
+                });
                 
-                // Create an iframe to submit the form (workaround for CORS)
-                const iframe = document.createElement('iframe');
-                iframe.name = 'hidden_iframe';
-                iframe.style.display = 'none';
-                document.body.appendChild(iframe);
-                
-                const form = document.createElement('form');
-                form.method = 'POST';
-                form.action = googleFormUrl;
-                form.target = 'hidden_iframe';
-                
-                // Add form fields with your actual Google Form entry IDs
-                const fields = {
-                    'entry.359312210': formData.name,      // Name field
-                    'entry.1312783699': formData.email,    // Email field
-                    'entry.937815300': formData.usecase    // Use Case field
-                };
-                
-                for (const [key, value] of Object.entries(fields)) {
-                    const input = document.createElement('input');
-                    input.type = 'hidden';
-                    input.name = key;
-                    input.value = value;
-                    form.appendChild(input);
-                }
-                
-                document.body.appendChild(form);
-                form.submit();
-                
-                // Clean up
-                setTimeout(() => {
-                    document.body.removeChild(form);
-                    document.body.removeChild(iframe);
-                }, 1000);
-                
+                fetch(formResponseUrl, {
+                    method: 'POST',
+                    body: formBody,
+                    mode: 'no-cors'
+                }).then(() => {
+                    console.log('Form submitted via fetch');
+                }).catch(err => {
+                    console.log('Fetch error (expected with no-cors):', err);
+                });
             } catch (error) {
                 console.log('Form submission error:', error);
             }
-
-            // Redirect to download page after a short delay
+            
+            // Store locally as backup
+            try {
+                const submissions = JSON.parse(localStorage.getItem('formSubmissions') || '[]');
+                submissions.push(formData);
+                localStorage.setItem('formSubmissions', JSON.stringify(submissions));
+                console.log('Saved to localStorage as backup');
+            } catch (e) {
+                console.log('LocalStorage error:', e);
+            }
+            
+            // Redirect to download page
             setTimeout(() => {
-                window.location.href = 'download.html';
-            }, 500);
+                console.log('Redirecting to download page...');
+                window.location.href = '/download';
+            }, 1000);
         });
     </script>
 </body>
