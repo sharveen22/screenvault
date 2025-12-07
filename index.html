@@ -1253,58 +1253,35 @@
                 timestamp: new Date().toISOString()
             };
 
-            console.log('Form data collected:', formData);
+            console.log('Submitting form data:', formData);
 
-            // Method 1: Try submitting to Google Forms via direct link
-            const googleFormUrl = 'https://docs.google.com/forms/d/e/1FAIpQLSfjk_B2hKnYo-eVkY4aZy9LQ5NFcSANRXWm7Vz1A-dSZGFQHg/viewform';
-            const prefillUrl = `${googleFormUrl}?usp=pp_url&entry.359312210=${encodeURIComponent(formData.name)}&entry.1312783699=${encodeURIComponent(formData.email)}&entry.937815300=${encodeURIComponent(formData.usecase)}&submit=Submit`;
-            
-            // Open form in hidden iframe to submit
-            const iframe = document.createElement('iframe');
-            iframe.name = 'hidden_iframe';
-            iframe.style.display = 'none';
-            iframe.src = prefillUrl;
-            document.body.appendChild(iframe);
-            
-            console.log('Submitting to Google Forms...');
-            
-            // Also try the formResponse endpoint
             try {
-                const formResponseUrl = 'https://docs.google.com/forms/d/e/1FAIpQLSfjk_B2hKnYo-eVkY4aZy9LQ5NFcSANRXWm7Vz1A-dSZGFQHg/formResponse';
-                const formBody = new URLSearchParams({
-                    'entry.359312210': formData.name,
-                    'entry.1312783699': formData.email,
-                    'entry.937815300': formData.usecase
-                });
-                
-                fetch(formResponseUrl, {
+                // Submit to Formspree
+                const response = await fetch('https://formspree.io/f/mldqwrkd', {
                     method: 'POST',
-                    body: formBody,
-                    mode: 'no-cors'
-                }).then(() => {
-                    console.log('Form submitted via fetch');
-                }).catch(err => {
-                    console.log('Fetch error (expected with no-cors):', err);
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(formData)
                 });
+
+                if (response.ok) {
+                    console.log('Form submitted successfully to Formspree!');
+                    
+                    // Redirect to download page
+                    window.location.href = '/download';
+                } else {
+                    console.error('Form submission failed:', response.status);
+                    submitButton.textContent = 'Error - Try Again';
+                    submitButton.disabled = false;
+                    alert('There was an error submitting the form. Please try again.');
+                }
             } catch (error) {
-                console.log('Form submission error:', error);
+                console.error('Form submission error:', error);
+                submitButton.textContent = 'Error - Try Again';
+                submitButton.disabled = false;
+                alert('There was an error submitting the form. Please try again.');
             }
-            
-            // Store locally as backup
-            try {
-                const submissions = JSON.parse(localStorage.getItem('formSubmissions') || '[]');
-                submissions.push(formData);
-                localStorage.setItem('formSubmissions', JSON.stringify(submissions));
-                console.log('Saved to localStorage as backup');
-            } catch (e) {
-                console.log('LocalStorage error:', e);
-            }
-            
-            // Redirect to download page
-            setTimeout(() => {
-                console.log('Redirecting to download page...');
-                window.location.href = '/download';
-            }, 1000);
         });
     </script>
 </body>
