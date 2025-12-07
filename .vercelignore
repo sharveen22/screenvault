@@ -1,15 +1,16 @@
+# Ignore the Electron app and build files
 node_modules
 .git
 .DS_Store
 *.log
-db
-electron
-dist
-scripts
-src
+db/
+electron/
+dist/
+scripts/
+src/
 *.md
 !README.md
-.bolt
+.bolt/
 .env
 *.sh
 *.py
@@ -20,4 +21,12 @@ vite.config.ts
 tailwind.config.js
 postcss.config.js
 eslint.config.js
+eslint.config.js
 entitlements.mac.plist
+release/
+
+# Only deploy landing page files
+# index.html
+# download.html
+# public/
+# app-hero-screenshot-*
