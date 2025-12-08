@@ -3,5 +3,11 @@
   "outputDirectory": ".",
   "installCommand": "echo 'No install needed'",
   "cleanUrls": true,
-  "trailingSlash": false
+  "trailingSlash": false,
+  "rewrites": [
+    {
+      "source": "/",
+      "destination": "/landing.html"
+    }
+  ]
 }

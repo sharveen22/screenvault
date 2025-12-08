@@ -21,12 +21,8 @@ vite.config.ts
 tailwind.config.js
 postcss.config.js
 eslint.config.js
-eslint.config.js
 entitlements.mac.plist
 release/
 
-# Only deploy landing page files
-# index.html
-# download.html
-# public/
-# app-hero-screenshot-*
+# Ignore React app index.html (keep landing.html only)
+index.html
