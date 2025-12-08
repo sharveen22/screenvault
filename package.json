@@ -47,7 +47,7 @@
       "entitlements": "entitlements.mac.plist",
       "entitlementsInherit": "entitlements.mac.plist",
       "gatekeeperAssess": false,
-      "identity": "Taufiq Ichwanusofa (292P5QPB73)",
+      "identity": "CATALYST GROWTH SG PTE. LTD. (YG5879BX5G)",
       "extendInfo": {}
     },
     "afterSign": "scripts/notarize.js",

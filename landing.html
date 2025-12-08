@@ -1,0 +1,1289 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ScreenVault - Your Screenshots, Perfectly Organized & Instantly Searchable</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@1,400;1,500&family=Inter:wght@300;400;500;600&family=Space+Grotesk:wght@300;400;500;600;700&display=swap"
+        rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-primary: #e9e6e4;
+            --bg-secondary: #dcd9d7;
+            --text-primary: #161419;
+            --border-color: #161419;
+            /* Darker border for higher contrast/premium feel */
+            --font-title: "Space Grotesk", sans-serif;
+            --font-body: "Inter", sans-serif;
+            --font-italic: "Playfair Display", serif;
+            --ease-out: cubic-bezier(0.215, 0.61, 0.355, 1);
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            font-family: var(--font-body);
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            overflow-x: hidden;
+            position: relative;
+        }
+
+        /* Noise Texture for Premium Paper Feel */
+        body::before {
+            content: "";
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 9999;
+            opacity: 0.03;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 40px;
+        }
+
+        /* Animations */
+        .reveal-text {
+            opacity: 0;
+            transform: translateY(30px);
+            transition: opacity 0.8s var(--ease-out), transform 0.8s var(--ease-out);
+        }
+
+        .reveal-text.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .stagger-1 {
+            transition-delay: 0.1s;
+        }
+
+        .stagger-2 {
+            transition-delay: 0.2s;
+        }
+
+        .stagger-3 {
+            transition-delay: 0.3s;
+        }
+
+        /* Header */
+        header {
+            padding: 20px 0;
+            border-bottom: 1px solid rgba(22, 20, 25, 0.1);
+            position: sticky;
+            top: 0;
+            background: rgba(233, 230, 228, 0.95);
+            backdrop-filter: blur(10px);
+            z-index: 100;
+            transition: transform 0.3s ease;
+        }
+
+        nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-family: var(--font-title);
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            text-transform: uppercase;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        /* Logo Image */
+        .logo-image {
+            width: 32px;
+            height: 32px;
+            object-fit: contain;
+            flex-shrink: 0;
+        }
+
+        .cta-button {
+            background: var(--text-primary);
+            color: var(--bg-primary);
+            padding: 16px 36px;
+            text-decoration: none;
+            font-family: var(--font-title);
+            font-weight: 600;
+            font-size: 14px;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            transition: all 0.3s var(--ease-out);
+            border: 2px solid var(--text-primary);
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+            display: inline-block;
+        }
+
+        .cta-button:hover {
+            background: transparent;
+            color: var(--text-primary);
+            transform: translateY(-3px);
+            box-shadow: 6px 6px 0px rgba(22, 20, 25, 0.15);
+        }
+
+        .cta-button-secondary {
+            background: transparent;
+            color: var(--text-primary);
+            border: 2px solid var(--text-primary);
+            padding: 14px 32px;
+            text-decoration: none;
+            font-family: var(--font-title);
+            font-weight: 600;
+            font-size: 14px;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            transition: all 0.3s var(--ease-out);
+            display: inline-block;
+        }
+
+        .cta-button-secondary:hover {
+            background: var(--text-primary);
+            color: var(--bg-primary);
+            transform: translateY(-3px);
+            box-shadow: 6px 6px 0px rgba(22, 20, 25, 0.15);
+        }
+
+        /* Hero Section */
+        .hero {
+            padding: 60px 0 100px;
+            border-bottom: 1px solid rgba(22, 20, 25, 0.1);
+            position: relative;
+            overflow: hidden;
+            min-height: 95vh;
+            display: flex;
+            align-items: center;
+        }
+
+        .hero .container {
+            max-width: 1600px;
+            padding: 0 60px;
+        }
+
+        .hero-grid {
+            display: grid;
+            grid-template-columns: 38% 62%;
+            gap: 60px;
+            align-items: center;
+            width: 100%;
+        }
+
+        .hero-content {
+            text-align: left;
+        }
+
+        .hero h1 {
+            font-family: var(--font-title);
+            font-size: clamp(42px, 4.8vw, 64px);
+            font-weight: 700;
+            line-height: 1.05;
+            letter-spacing: -0.04em;
+            margin-bottom: 28px;
+            color: var(--text-primary);
+            overflow: visible;
+        }
+
+        .hero h1 .light {
+            font-weight: 400;
+        }
+
+        .hero h1 .italic {
+            font-family: var(--font-italic);
+            font-weight: 400;
+            font-style: italic;
+        }
+
+        .hero .subtitle {
+            font-size: 19px;
+            opacity: 0.75;
+            max-width: 540px;
+            margin: 0 0 36px 0;
+            line-height: 1.65;
+            font-weight: 400;
+        }
+
+        .hero-cta {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .app-preview-container {
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .app-preview {
+            background: transparent;
+            border: 1px solid var(--text-primary);
+            border-radius: 12px;
+            padding: 0;
+            width: 100%;
+            height: auto;
+            display: flex;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+            transition: all 0.4s var(--ease-out);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .app-preview:hover {
+            box-shadow: 0 30px 80px rgba(0, 0, 0, 0.2);
+            transform: translateY(-8px);
+        }
+
+        .app-preview img {
+            width: 100%;
+            height: auto;
+            max-width: 100%;
+            object-fit: cover;
+            border-radius: 12px;
+            display: block;
+            image-rendering: -webkit-optimize-contrast;
+            image-rendering: crisp-edges;
+        }
+        
+        .app-preview picture {
+            width: 100%;
+            display: block;
+        }
+
+        /* Problem Section */
+        .problem-section {
+            padding: 120px 0;
+            border-bottom: 1px solid rgba(22, 20, 25, 0.1);
+            background: #f5f3f1;
+            /* Subtle contrast background */
+        }
+
+        .section-title {
+            font-family: var(--font-title);
+            font-size: clamp(36px, 4.5vw, 58px);
+            font-weight: 700;
+            letter-spacing: -0.03em;
+            text-align: center;
+            margin-bottom: 80px;
+            line-height: 1.15;
+        }
+
+        .problems-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 30px;
+            /* Increased gap for separated cards */
+            background: transparent;
+            border: none;
+        }
+
+        .problem-card {
+            padding: 48px 36px;
+            background: var(--bg-primary);
+            border: 1px solid rgba(22, 20, 25, 0.08);
+            border-radius: 12px;
+            transition: all 0.3s ease;
+            position: relative;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.02);
+        }
+
+        .problem-card:hover {
+            background: #fff;
+            transform: translateY(-5px);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.08);
+            border-color: rgba(22, 20, 25, 0.2);
+        }
+
+        .problem-icon {
+            font-size: 56px;
+            /* Larger icon */
+            margin-bottom: 24px;
+            display: inline-block;
+            transition: transform 0.3s var(--ease-out);
+        }
+
+        .problem-card:hover .problem-icon {
+            transform: scale(1.1) rotate(5deg);
+        }
+
+        .problem-card h3 {
+            font-family: var(--font-title);
+            font-size: 28px;
+            /* Larger heading */
+            font-weight: 700;
+            margin-bottom: 20px;
+            letter-spacing: -0.5px;
+        }
+
+        .problem-card p {
+            opacity: 0.8;
+            font-size: 17px;
+            line-height: 1.6;
+        }
+
+        /* Solution Section */
+        .solution-section {
+            padding: 120px 0;
+            border-bottom: 1px solid rgba(22, 20, 25, 0.1);
+            background: var(--bg-primary);
+        }
+
+        .steps-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 60px;
+            margin-top: 80px;
+            position: relative;
+        }
+
+        /* Connector Line */
+        .steps-grid::before {
+            content: '';
+            position: absolute;
+            top: 60px;
+            left: 16%;
+            right: 16%;
+            height: 2px;
+            background: repeating-linear-gradient(to right,
+                    var(--text-primary) 0,
+                    var(--text-primary) 10px,
+                    transparent 10px,
+                    transparent 20px);
+            opacity: 0.2;
+            z-index: 0;
+        }
+
+        .step {
+            text-align: center;
+            position: relative;
+            z-index: 1;
+        }
+
+        .step-number {
+            font-family: var(--font-title);
+            font-size: 80px;
+            font-weight: 700;
+            color: var(--bg-primary);
+            -webkit-text-stroke: 2px var(--text-primary);
+            background: var(--bg-primary);
+            width: 120px;
+            height: 120px;
+            line-height: 120px;
+            margin: 0 auto 32px;
+            border-radius: 50%;
+            position: relative;
+            z-index: 1;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .step:hover .step-number {
+            background: var(--text-primary);
+            color: var(--bg-primary);
+            transform: scale(1.1) rotate(-5deg);
+            -webkit-text-stroke: 0;
+            box-shadow: 10px 10px 0 rgba(0, 0, 0, 0.1);
+        }
+
+        .step h3 {
+            font-family: var(--font-title);
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 20px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .step p {
+            opacity: 0.8;
+            line-height: 1.7;
+            position: relative;
+            z-index: 1;
+            font-size: 18px;
+        }
+
+        /* Stats Section */
+        .stats-section {
+            padding: 120px 0;
+            border-bottom: 1px solid rgba(22, 20, 25, 0.1);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 32px;
+            margin-top: 80px;
+        }
+
+        .stat {
+            text-align: center;
+            padding: 50px 30px;
+            border: 1px solid rgba(22, 20, 25, 0.1);
+            border-radius: 12px;
+            background: var(--bg-primary);
+            transition: all 0.3s var(--ease-out);
+            position: relative;
+        }
+
+        .stat:hover {
+            background: var(--text-primary);
+            color: var(--bg-primary);
+            transform: translateY(-10px);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+        }
+
+        .stat:hover .stat-number,
+        .stat:hover .stat-label,
+        .stat:hover .stat-description {
+            color: var(--bg-primary);
+        }
+
+        .stat-number {
+            font-family: var(--font-title);
+            font-size: 88px;
+            /* Larger number */
+            font-weight: 700;
+            margin-bottom: 8px;
+            line-height: 1;
+            letter-spacing: -2px;
+        }
+
+        .stat-label {
+            font-family: var(--font-title);
+            font-size: 20px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-bottom: 20px;
+            opacity: 0.8;
+        }
+
+        .stat-description {
+            opacity: 0.7;
+            font-size: 15px;
+            transition: opacity 0.3s;
+            line-height: 1.5;
+        }
+
+        .stat:hover .stat-description {
+            opacity: 0.9;
+        }
+
+        /* Privacy Section */
+        .privacy-section {
+            padding: 120px 0;
+            text-align: center;
+            border-bottom: 1px solid rgba(22, 20, 25, 0.1);
+            background: #f5f3f1;
+            color: var(--text-primary);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .privacy-content {
+            max-width: 800px;
+            margin: 0 auto;
+            position: relative;
+            z-index: 1;
+        }
+
+        .privacy-icon {
+            font-size: 80px;
+            margin-bottom: 40px;
+            display: inline-block;
+        }
+
+        .privacy-section h2 {
+            font-family: var(--font-title);
+            font-size: 52px;
+            font-weight: 700;
+            letter-spacing: -1.5px;
+            margin-bottom: 28px;
+            color: var(--text-primary);
+        }
+
+        .privacy-section p {
+            font-size: 22px;
+            opacity: 0.8;
+            line-height: 1.6;
+            font-weight: 400;
+            max-width: 700px;
+            margin: 0 auto;
+        }
+
+        /* FAQ Section */
+        .faq-section {
+            padding: 120px 0;
+            border-bottom: 1px solid rgba(22, 20, 25, 0.1);
+        }
+
+        .faq-list {
+            max-width: 900px;
+            margin: 80px auto 0;
+        }
+
+        .faq-item {
+            border-bottom: 1px solid rgba(22, 20, 25, 0.2);
+        }
+
+        .faq-question {
+            font-family: var(--font-title);
+            font-size: 22px;
+            font-weight: 600;
+            padding: 28px 0;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: color 0.2s;
+        }
+
+        .faq-question:hover {
+            color: #555;
+        }
+
+        .faq-icon {
+            font-size: 24px;
+            transition: transform 0.3s ease;
+        }
+
+        .faq-item.active .faq-icon {
+            transform: rotate(45deg);
+        }
+
+        .faq-answer {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.4s var(--ease-out), opacity 0.4s ease;
+            opacity: 0;
+        }
+
+        .faq-item.active .faq-answer {
+            max-height: 300px;
+            opacity: 1;
+            padding-bottom: 28px;
+        }
+
+        .faq-answer p {
+            opacity: 0.8;
+            line-height: 1.8;
+            font-size: 16px;
+        }
+
+        /* Final CTA Section */
+        .final-cta {
+            padding: 120px 0;
+            text-align: center;
+            border-bottom: 1px solid rgba(22, 20, 25, 0.1);
+            position: relative;
+            background: #161419;
+            /* Inverted background */
+            color: #e9e6e4;
+            /* Inverted text */
+        }
+
+        .final-cta h2 {
+            font-family: var(--font-title);
+            font-size: clamp(48px, 5.5vw, 72px);
+            font-weight: 700;
+            letter-spacing: -2px;
+            margin-bottom: 28px;
+            color: #e9e6e4;
+        }
+
+        .final-cta p {
+            font-size: 24px;
+            opacity: 0.8;
+            margin-bottom: 48px;
+            font-weight: 300;
+        }
+
+        .final-cta .cta-button {
+            background: #e9e6e4;
+            color: #161419;
+            border-color: #e9e6e4;
+            padding: 18px 48px;
+            font-size: 16px;
+        }
+
+        .final-cta .cta-button:hover {
+            background: transparent;
+            color: #e9e6e4;
+            box-shadow: 4px 4px 0px rgba(233, 230, 228, 0.2);
+        }
+
+        .cta-features {
+            display: flex;
+            justify-content: center;
+            gap: 40px;
+            margin-top: 48px;
+            font-size: 15px;
+            opacity: 0.6;
+            font-family: var(--font-title);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* Footer */
+        footer {
+            padding: 60px 0;
+            background: var(--bg-primary);
+        }
+
+        .footer-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .footer-links {
+            display: flex;
+            gap: 40px;
+        }
+
+        .footer-links a {
+            color: var(--text-primary);
+            text-decoration: none;
+            opacity: 0.6;
+            transition: opacity 0.2s;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: 500;
+        }
+
+        .footer-links a:hover {
+            opacity: 1;
+        }
+
+        .copyright {
+            opacity: 0.4;
+            font-size: 14px;
+        }
+
+        /* Download Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 10000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(22, 20, 25, 0.8);
+            backdrop-filter: blur(8px);
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .modal-content {
+            background-color: var(--bg-primary);
+            margin: 5% auto;
+            padding: 50px 40px;
+            border: 2px solid var(--text-primary);
+            width: 90%;
+            max-width: 500px;
+            border-radius: 12px;
+            position: relative;
+            animation: slideUp 0.4s ease;
+        }
+
+        @keyframes slideUp {
+            from {
+                transform: translateY(50px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        .close {
+            color: var(--text-primary);
+            position: absolute;
+            right: 20px;
+            top: 20px;
+            font-size: 32px;
+            font-weight: 300;
+            cursor: pointer;
+            transition: transform 0.2s;
+            line-height: 1;
+        }
+
+        .close:hover {
+            transform: rotate(90deg);
+        }
+
+        .modal-content h2 {
+            font-family: var(--font-title);
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 10px;
+            letter-spacing: -1px;
+        }
+
+        .modal-subtitle {
+            opacity: 0.7;
+            margin-bottom: 30px;
+            font-size: 16px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+            text-align: left;
+        }
+
+        .form-group label {
+            display: block;
+            font-family: var(--font-title);
+            font-weight: 600;
+            font-size: 14px;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 14px 16px;
+            border: 2px solid rgba(22, 20, 25, 0.2);
+            background: white;
+            font-family: var(--font-body);
+            font-size: 16px;
+            transition: border-color 0.2s;
+            outline: none;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            border-color: var(--text-primary);
+        }
+
+        .submit-button {
+            width: 100%;
+            background: var(--text-primary);
+            color: var(--bg-primary);
+            padding: 16px 36px;
+            border: 2px solid var(--text-primary);
+            font-family: var(--font-title);
+            font-weight: 600;
+            font-size: 14px;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-top: 10px;
+        }
+
+        .submit-button:hover {
+            background: transparent;
+            color: var(--text-primary);
+            transform: translateY(-2px);
+            box-shadow: 4px 4px 0px rgba(22, 20, 25, 0.1);
+        }
+
+        .privacy-note {
+            text-align: center;
+            font-size: 13px;
+            opacity: 0.6;
+            margin-top: 15px;
+        }
+
+        @media (max-width: 768px) {
+
+            .hero-grid {
+                grid-template-columns: 1fr;
+                gap: 40px;
+            }
+
+            .hero-content {
+                text-align: center;
+            }
+
+            .hero .subtitle {
+                max-width: 100%;
+            }
+
+            .hero-cta {
+                justify-content: center;
+            }
+
+            .problems-grid,
+            .steps-grid,
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .container {
+                padding: 0 24px;
+            }
+
+            .hero h1 {
+                font-size: 48px;
+            }
+
+            .cta-features {
+                flex-direction: column;
+                gap: 16px;
+            }
+
+            .footer-content {
+                flex-direction: column;
+                gap: 40px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Header -->
+    <header>
+        <div class="container">
+            <nav>
+                <div class="logo">
+                    <img src="/camera.png" alt="ScreenVault Logo" class="logo-image">
+                    <span>ScreenVault</span>
+                </div>
+                <a href="#" class="cta-button download-trigger">Download Free</a>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="container">
+            <div class="hero-grid">
+                <div class="hero-content">
+                    <h1 class="reveal-text"><span class="light">Your Screenshots.</span><br>Perfectly Organized
+                        &<br>Instantly Searchable.<br><span class="italic">Finally.</span></h1>
+                    <p class="subtitle reveal-text stagger-1">The only screenshot manager with AI-powered Search, smart
+                        tagging, and local-first privacy. Never lose or waste time hunting for screenshot again!</p>
+
+                    <div class="hero-cta reveal-text stagger-2">
+                        <a href="#" class="cta-button download-trigger">Download for macOS (Free)</a>
+                        <a href="#how-it-works" class="cta-button-secondary">See How It Works</a>
+                    </div>
+                </div>
+
+                <div class="app-preview-container reveal-text stagger-3">
+                    <div class="app-preview">
+                        <picture>
+                            <source 
+                                srcset="app-hero-screenshot-1x.webp 1x, app-hero-screenshot-2x.webp 2x, app-hero-screenshot-3x.webp 3x"
+                                type="image/webp">
+                            <img src="app-hero-screenshot-1x.png"
+                                srcset="app-hero-screenshot-1x.png 1x, app-hero-screenshot-2x.png 2x, app-hero-screenshot-3x.png 3x"
+                                alt="ScreenVault App Interface"
+                                loading="eager">
+                        </picture>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Problem Section -->
+    <section class="problem-section">
+        <div class="container">
+            <h2 class="section-title reveal-text">You Take Hundreds of Screenshots.<br>Your Mac Turns Them Into Chaos.
+            </h2>
+
+            <div class="problems-grid">
+                <div class="problem-card reveal-text stagger-1">
+                    <div class="problem-icon">🗂️</div>
+                    <h3>Impossible to Find</h3>
+                    <p>Your 482 screenshots all have cryptic names like "Screenshot 2025-11-22 at 3.42.17 PM.png". Good
+                        luck finding the one you need.</p>
+                </div>
+
+                <div class="problem-card reveal-text stagger-2">
+                    <div class="problem-icon">⏰</div>
+                    <h3>Time Blackhole</h3>
+                    <p>15 minutes per day hunting for screenshots = 5+ hours per month = 60 hours per year wasted
+                        just... looking for files.</p>
+                </div>
+
+                <div class="problem-card reveal-text stagger-3">
+                    <div class="problem-icon">🤯</div>
+                    <h3>Zero Organization</h3>
+                    <p>Bug reports mixed with design mockups mixed with memes. Your Downloads folder is a disaster zone
+                        with 800+ files and zero structure.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Solution Section -->
+    <section class="solution-section" id="how-it-works">
+        <div class="container">
+            <h2 class="section-title reveal-text">ScreenVault: Your Screenshots,<br>But Actually Useful</h2>
+            <p style="text-align: center; opacity: 0.7; font-size: 18px; margin-bottom: 60px;" class="reveal-text">Three
+                simple steps to screenshot nirvana</p>
+
+            <div class="steps-grid">
+                <div class="step reveal-text stagger-1">
+                    <div class="step-number">1</div>
+                    <h3>Capture</h3>
+                    <p>Take screenshots with Cmd+Shift+S. ScreenVault monitors your screenshot folder automatically, or
+                        use our browser extension for instant web captures.</p>
+                </div>
+
+                <div class="step reveal-text stagger-2">
+                    <div class="step-number">2</div>
+                    <h3>Process</h3>
+                    <p>ScreenVault instantly runs AI-powered Search, extracts text, auto-tags, generates thumbnails, and
+                        organizes everything—all in under 3 seconds. 100% on your Mac.</p>
+                </div>
+
+                <div class="step reveal-text stagger-3">
+                    <div class="step-number">3</div>
+                    <h3>Search & Find</h3>
+                    <p>Type anything: "error message", "John's email", "blue button design". Results appear instantly
+                        with AI semantic search. Click to view full-size, copy, or share.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Stats Section -->
+    <section class="stats-section">
+        <div class="container">
+            <h2 class="section-title reveal-text">Reclaim Your Time.<br>Protect Your Privacy.</h2>
+
+            <div class="stats-grid">
+                <div class="stat reveal-text stagger-1">
+                    <div class="stat-number">87%</div>
+                    <div class="stat-label">Reduction</div>
+                    <p class="stat-description">Time spent searching for screenshots<br>(average: 13 min → 2 min daily)
+                    </p>
+                </div>
+
+                <div class="stat reveal-text stagger-2">
+                    <div class="stat-number">94%</div>
+                    <div class="stat-label">Satisfaction</div>
+                    <p class="stat-description">Users say ScreenVault improved their documentation quality<br>(internal
+                        survey, Nov 2025)</p>
+                </div>
+
+                <div class="stat reveal-text stagger-3">
+                    <div class="stat-number">100%</div>
+                    <div class="stat-label">Privacy</div>
+                    <p class="stat-description">Your visual data never leaves your machine<br>No cloud uploads, no
+                        third-party access</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Privacy Section -->
+    <section class="privacy-section">
+        <div class="container">
+            <div class="privacy-content reveal-text">
+                <div class="privacy-icon">
+                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                        <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                    </svg>
+                </div>
+                <h2>AI Processing Happens Entirely on Your Mac</h2>
+                <p>Your screenshots contain sensitive data. We keep them 100% offline on your device. No cloud uploads.
+                    No leaks. All AI processing uses local models.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- FAQ Section -->
+    <section class="faq-section">
+        <div class="container">
+            <h2 class="section-title reveal-text">FAQs</h2>
+
+            <div class="faq-list">
+                <div class="faq-item reveal-text">
+                    <div class="faq-question">
+                        How is this different from Mac's Screenshot tool?
+                        <span class="faq-icon">+</span>
+                    </div>
+                    <div class="faq-answer">
+                        <p>Mac's built-in Screenshot app doesn't have AI search capabilities, while other tools charge
+                            $10-30/month for AI features. We've embedded the latest open-source AI models so everything
+                            runs locally on your Mac, completely free. No subscriptions, no cloud uploads—just powerful
+                            search that actually works.</p>
+                    </div>
+                </div>
+
+                <div class="faq-item reveal-text">
+                    <div class="faq-question">
+                        Where are my screenshots stored?
+                        <span class="faq-icon">+</span>
+                    </div>
+                    <div class="faq-answer">
+                        <p>All screenshots are stored in your local folders on your Mac. 100% privacy guaranteed.
+                            Nothing is uploaded to the cloud unless you choose to sync with your own Dropbox or Google
+                            Drive. Your screenshots stay on your device, under your control.</p>
+                    </div>
+                </div>
+
+                <div class="faq-item reveal-text">
+                    <div class="faq-question">
+                        Is there a free trial?
+                        <span class="faq-icon">+</span>
+                    </div>
+                    <div class="faq-answer">
+                        <p>Even better—ScreenVault is completely free for the current version. Download now and enjoy
+                            unlimited screenshots, AI search, and smart organization at no cost. We're working on
+                            Version 3 with additional premium features (pricing TBD), but everything you need is free
+                            today.</p>
+                    </div>
+                </div>
+
+                <div class="faq-item reveal-text">
+                    <div class="faq-question">
+                        Do I need to change my screenshot workflow?
+                        <span class="faq-icon">+</span>
+                    </div>
+                    <div class="faq-answer">
+                        <p>Almost zero changes required. Instead of Cmd+Shift+4 or Cmd+Shift+5, simply use Cmd+Shift+S
+                            to capture screenshots with ScreenVault. Everything else works exactly as you're used
+                            to—just with instant organization and AI-powered search.</p>
+                    </div>
+                </div>
+
+                <div class="faq-item reveal-text">
+                    <div class="faq-question">
+                        Can it work on Windows?
+                        <span class="faq-icon">+</span>
+                    </div>
+                    <div class="faq-answer">
+                        <p>ScreenVault is currently macOS-only. We're focused on delivering the best possible Mac
+                            experience first. Windows support is on our roadmap—join our mailing list to be notified
+                            when we launch on Windows.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Final CTA -->
+    <section class="final-cta" id="download">
+        <div class="container">
+            <h2 class="reveal-text">End Screenshot Chaos</h2>
+            <p class="reveal-text stagger-1">Download ScreenVault for free. No credit card. Just better screenshots.</p>
+
+            <div class="reveal-text stagger-2">
+                <a href="#" class="cta-button download-trigger">Download for macOS (Free)</a>
+            </div>
+
+            <div class="cta-features reveal-text stagger-3">
+                <span>✓ Free forever for current version</span>
+                <span>✓ Works offline on your Mac</span>
+                <span>✓ 100% private—no cloud required</span>
+                <span>✓ AI-powered search included</span>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <div class="container">
+            <div class="footer-content">
+                <div class="logo">
+                    <img src="/camera.png" alt="ScreenVault Logo" class="logo-image">
+                    <span>ScreenVault</span>
+                </div>
+                <div class="footer-links">
+                    <a href="#">Privacy</a>
+                    <a href="#">Terms</a>
+                    <a href="#">Security</a>
+                </div>
+                <div class="copyright">© 2025 ScreenVault Inc.</div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Download Form Modal -->
+    <div id="downloadModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Download ScreenVault</h2>
+            <p class="modal-subtitle">Enter your details to get instant access</p>
+            
+            <form id="downloadForm">
+                <div class="form-group">
+                    <label for="name">Name *</label>
+                    <input type="text" id="name" name="name" required placeholder="John Doe">
+                </div>
+                
+                <div class="form-group">
+                    <label for="email">Email *</label>
+                    <input type="email" id="email" name="email" required placeholder="john@example.com">
+                </div>
+                
+                <div class="form-group">
+                    <label for="usecase">How will you use ScreenVault? (Optional)</label>
+                    <select id="usecase" name="usecase">
+                        <option value="">Select an option</option>
+                        <option value="work">Work / Professional</option>
+                        <option value="personal">Personal Use</option>
+                        <option value="development">Software Development</option>
+                        <option value="design">Design / Creative</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                
+                <button type="submit" class="submit-button">Download Now</button>
+                <p class="privacy-note">We respect your privacy. No spam, ever.</p>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // Scroll Reveal Animation
+        const observerOptions = {
+            root: null,
+            rootMargin: '0px',
+            threshold: 0.1
+        };
+
+        const observer = new IntersectionObserver((entries, observer) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('visible');
+                    observer.unobserve(entry.target); // Only animate once
+                }
+            });
+        }, observerOptions);
+
+        document.querySelectorAll('.reveal-text').forEach(el => {
+            observer.observe(el);
+        });
+
+        // FAQ Accordion
+        document.querySelectorAll('.faq-question').forEach(question => {
+            question.addEventListener('click', () => {
+                const item = question.parentElement;
+                const isActive = item.classList.contains('active');
+
+                // Close all other items
+                document.querySelectorAll('.faq-item').forEach(otherItem => {
+                    otherItem.classList.remove('active');
+                });
+
+                // Toggle current item
+                if (!isActive) {
+                    item.classList.add('active');
+                }
+            });
+        });
+
+        // Download Modal Functionality
+        const modal = document.getElementById('downloadModal');
+        const closeBtn = document.querySelector('.close');
+        const downloadForm = document.getElementById('downloadForm');
+
+        // Open modal when download buttons are clicked
+        document.querySelectorAll('.download-trigger').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                modal.style.display = 'block';
+                document.body.style.overflow = 'hidden';
+            });
+        });
+
+        // Close modal
+        closeBtn.onclick = function() {
+            modal.style.display = 'none';
+            document.body.style.overflow = 'auto';
+        }
+
+        window.onclick = function(event) {
+            if (event.target == modal) {
+                modal.style.display = 'none';
+                document.body.style.overflow = 'auto';
+            }
+        }
+
+        // Handle form submission
+        downloadForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const submitButton = e.target.querySelector('.submit-button');
+            submitButton.textContent = 'Submitting...';
+            submitButton.disabled = true;
+            
+            const formData = {
+                name: document.getElementById('name').value,
+                email: document.getElementById('email').value,
+                usecase: document.getElementById('usecase').value,
+                timestamp: new Date().toISOString()
+            };
+
+            console.log('Submitting form data:', formData);
+
+            try {
+                // Submit to Formspree
+                const response = await fetch('https://formspree.io/f/mldqwrkd', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(formData)
+                });
+
+                if (response.ok) {
+                    console.log('Form submitted successfully to Formspree!');
+                    
+                    // Redirect to download page
+                    window.location.href = '/download';
+                } else {
+                    console.error('Form submission failed:', response.status);
+                    submitButton.textContent = 'Error - Try Again';
+                    submitButton.disabled = false;
+                    alert('There was an error submitting the form. Please try again.');
+                }
+            } catch (error) {
+                console.error('Form submission error:', error);
+                submitButton.textContent = 'Error - Try Again';
+                submitButton.disabled = false;
+                alert('There was an error submitting the form. Please try again.');
+            }
+        });
+    </script>
+</body>
+
+</html>

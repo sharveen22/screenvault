@@ -154,7 +154,7 @@
             <p id="status">Preparing your download...</p>
         </div>
 
-        <a href="release/ScreenVault-1.0.0.dmg" class="manual-download" download>Click here if download doesn't start</a>
+        <a href="https://github.com/sharveen22/screenvault/releases/download/v1.0.0/ScreenVault-1.0.0.dmg" class="manual-download" download>Click here if download doesn't start</a>
         
         <br><br>
         
@@ -166,9 +166,9 @@
         setTimeout(() => {
             document.getElementById('status').textContent = 'Download starting...';
             
-            // Trigger download
+            // Trigger download from GitHub Releases
             const link = document.createElement('a');
-            link.href = 'release/ScreenVault-1.0.0.dmg';
+            link.href = 'https://github.com/sharveen22/screenvault/releases/download/v1.0.0/ScreenVault-1.0.0.dmg';
             link.download = 'ScreenVault-1.0.0.dmg';
             document.body.appendChild(link);
             link.click();
