@@ -23,6 +23,5 @@ postcss.config.js
 eslint.config.js
 entitlements.mac.plist
 release/
-
-# Ignore React app index.html (keep landing.html only)
-index.html
+landing.html
+landing-backup.html
