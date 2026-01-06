@@ -18,8 +18,6 @@ type ScreenshotPayload =
       bytes?: number[] | Uint8Array | ArrayBuffer;
     };
 
-// Type definitions removed to avoid conflicts with database.ts
-
 export function useElectronScreenshots() {
   const isElectron = typeof window !== 'undefined' && !!window.electronAPI;
 
@@ -52,7 +50,6 @@ export function useElectronScreenshots() {
     }
   };
 
-  // bytes first
   const toUint8 = (data: ScreenshotPayload): Uint8Array => {
     if ('bytes' in data && data.bytes != null) {
       const b: any = data.bytes;
@@ -72,6 +69,41 @@ export function useElectronScreenshots() {
     return out;
   };
 
+  // Background OCR processing (non-blocking)
+  const processOCRInBackground = async (file: File, screenshotId: string, originalName: string) => {
+    try {
+      const ocr = await extractTextFromImage(file);
+      const ocrText = ocr?.text || '';
+      const ocrConf = (ocr as any)?.confidence ?? null;
+
+      if (!ocrText.trim()) {
+        // No text found, skip update
+        return;
+      }
+
+      // Generate smart filename and tags from OCR
+      const smartName = generateSmartFilename(ocrText, originalName);
+      const tags = generateTags(ocrText);
+
+      // Update database with OCR results
+      await db
+        .from('screenshots')
+        .update({
+          file_name: smartName,
+          ocr_text: ocrText,
+          ocr_confidence: ocrConf,
+          custom_tags: tags,
+        })
+        .eq('id', screenshotId)
+        .select();
+
+      console.log(`[OCR] Completed for ${screenshotId}: ${ocrText.length} chars`);
+    } catch (e) {
+      console.warn('[OCR] Background processing failed:', e);
+      // Silent fail - screenshot is already saved
+    }
+  };
+
   const handleScreenshot = useCallback(
     async (data: ScreenshotPayload) => {
       // DEDUPE < 600ms
@@ -81,8 +113,6 @@ export function useElectronScreenshots() {
       if (last && last.sig === sig && now - last.ts < 600) return;
       lastEventRef.current = { sig, ts: now };
 
-      // No user_id check needed since authentication is disabled
-
       try {
         // ---- Bytes -> Blob/File ----
         const bytes = toUint8(data);
@@ -91,7 +121,7 @@ export function useElectronScreenshots() {
         const blob = new Blob([bytes as any], { type: 'image/png' });
         const file = new File([blob], (data as any).filename || 'screenshot.png', { type: 'image/png' });
 
-        // ---- Dimensi (cepat) ----
+        // ---- Get dimensions (fast) ----
         let width = 0,
           height = 0;
         try {
@@ -100,84 +130,31 @@ export function useElectronScreenshots() {
           height = bmp.height;
           bmp.close();
         } catch {
-          // aman diabaikan
+          // safe to ignore
         }
 
-        // ---- OCR (JALANKAN SEBELUM INSERT) ----
-        // Notifikasi: mulai OCR
-        const ocrStartId = `ocr-${Date.now()}`;
-        if ((window.electronAPI as any)?.notify) {
-          await (window.electronAPI as any).notify({
-            id: ocrStartId,
-            title: 'Processing OCR',
-            body: 'Analyzing text from screenshot…',
-            silent: true,
-          });
-        } else {
-          await html5Notify('Processing OCR', 'Analyzing text from screenshot…');
-        }
-
-        let ocrText = '';
-        let ocrConf: number | null = null;
-        let ocrOk = false;
-        try {
-          const ocr = await extractTextFromImage(file);
-          ocrText = ocr?.text || '';
-          ocrConf = (ocr as any)?.confidence ?? null;
-          ocrOk = !!ocrText?.trim();
-          // Notifikasi: hasil OCR (sukses/empty)
-          if (ocrOk) {
-            await (window.electronAPI as any)?.notify?.({
-              title: 'OCR complete',
-              body: `Extracted ~${Math.min(ocrText.length, 80)} chars`,
-              silent: true,
-            });
-          } else {
-            await (window.electronAPI as any)?.notify?.({
-              title: 'OCR complete',
-              body: 'No text detected',
-              silent: true,
-            });
-          }
-        } catch (e) {
-          console.warn('OCR failed, continue insert with empty OCR:', e);
-          // Notifikasi: OCR gagal
-          if ((window.electronAPI as any)?.notify) {
-            await (window.electronAPI as any).notify({
-              title: 'OCR failed',
-              body: 'Saved without OCR text',
-              silent: true,
-            });
-          } else {
-            await html5Notify('OCR failed', 'Saved without OCR text');
-          }
-        }
-
-        // ---- Smart filename & tags (berdasarkan OCR) ----
-        const baseName = (data as any).filename || 'screenshot.png';
-        const smartName = generateSmartFilename(ocrText, baseName);
-        const tags = generateTags(ocrText);
-
-        // ---- Insert ke DB (lengkap) ----
+        // ---- SAVE IMMEDIATELY (without OCR) ----
         const rowId =
           (globalThis.crypto as any)?.randomUUID?.() ??
           Math.random().toString(36).slice(2) + Date.now().toString(36);
+
+        const baseName = (data as any).filename || 'screenshot.png';
 
         const { error: insertErr } = await db
           .from('screenshots')
           .insert({
             id: rowId,
-            file_name: smartName,           // langsung pakai nama cerdas
+            file_name: baseName,           // Use original name initially
             file_size: file.size,
             file_type: file.type,
             width,
             height,
             storage_path: (data as any).filePath,
             source: 'desktop',
-            ocr_text: ocrText,              // hasil OCR
-            ocr_confidence: ocrConf,        // confidence jika tersedia
-            custom_tags: tags,              // pakai generator tags kamu
-            ai_tags: [],                    // bisa diisi nanti kalau ada pipeline AI
+            ocr_text: '',                  // Empty initially
+            ocr_confidence: null,
+            custom_tags: [],               // Empty initially
+            ai_tags: [],
             user_notes: '',
             is_favorite: false,
             is_archived: false,
@@ -190,30 +167,28 @@ export function useElectronScreenshots() {
 
         if (insertErr) throw insertErr;
 
-        // ✅ Notifikasi: screenshot tersimpan
+        // ✅ Notify: screenshot saved immediately
         const sizeKB = Math.max(1, Math.round(file.size / 1024));
         if ((window.electronAPI as any)?.notify) {
           await (window.electronAPI as any).notify({
             title: 'Screenshot saved',
-            body: `${smartName} • ${width || '?'}×${height || '?'} (${sizeKB} KB)`,
-            focus: false,
-            openPath: (data as any).filePath,
-            actions: [
-              { text: 'Show in folder', openPath: (data as any).filePath },
-            ],
+            body: `${baseName} • ${width || '?'}×${height || '?'} (${sizeKB} KB)`,
+            silent: true,
           });
         } else {
-          await html5Notify('Screenshot saved', `${smartName}`);
+          await html5Notify('Screenshot saved', `${baseName}`);
         }
 
-        // (opsional) refresh UI ringan
+        // Refresh UI immediately
         setTimeout(() => {
           if (typeof window !== 'undefined') window.location.reload();
         }, 50);
 
+        // ---- OCR IN BACKGROUND (async, non-blocking) ----
+        processOCRInBackground(file, rowId, baseName);
+
       } catch (error) {
-        console.error('Error processing screenshot (OCR-first path):', error);
-        // Notifikasi error proses keseluruhan
+        console.error('[Screenshot] Error processing:', error);
         if ((window.electronAPI as any)?.notify) {
           await (window.electronAPI as any).notify({
             title: 'Save failed',
@@ -241,10 +216,8 @@ export function useElectronScreenshots() {
       console.error('Failed to subscribe to screenshot events:', e);
     }
 
-    // optional: log dari main
     const offLog = (window.electronAPI as any)?.onLog?.((_p: any) => {
-      // contoh: tampilkan ke toast/devtools jika mau
-      // console.debug('[MainLog]', p.level, p.msg);
+      // Optional: display logs
     });
 
     return () => {
