@@ -37,8 +37,21 @@ export function Gallery({ searchQuery, activeView, onDropSuccess }: GalleryProps
 
       console.log('[Gallery] loadScreenshots start', { activeView, q: qRaw });
 
-      // --- 1) Ambil data utama ---
+      // Build WHERE clause based on activeView for better performance
+      let where: Record<string, any> | undefined;
+      
+      if (activeView === 'favorites') {
+        where = { is_favorite: 1 }; // SQLite uses 1 for true
+      } else if (activeView === 'archived') {
+        where = { is_archived: 1 };
+      } else if (activeView !== 'all' && activeView !== 'recent') {
+        // Assume activeView is a folder ID
+        where = { folder_id: activeView };
+      }
+
+      // Query with WHERE clause - much faster than loading all then filtering
       const primaryRes = await db.from('screenshots').select({
+        where,
         orderBy: { column: 'created_at', direction: 'desc' },
         limit: 1000,
       }) as any;
@@ -49,42 +62,14 @@ export function Gallery({ searchQuery, activeView, onDropSuccess }: GalleryProps
       }
       console.log('[Gallery] primary count:', rows.length);
 
-      // --- 1b) Sort aman DESC by created_at (fallback kalau backend abaikan orderBy) ---
-      const safeTime = (v: any) => {
-        const t = new Date(v?.created_at ?? 0).getTime();
-        return Number.isFinite(t) ? t : 0;
-      };
-      rows.sort((a, b) => safeTime(b) - safeTime(a));
-
-      // --- 2) Fallback lama kalau benar2 kosong (jarang) ---
-      if (!rows.length) {
-        console.warn('[Gallery] fallback: select all then filter in memory');
-        const allRes = await db.from('screenshots').select() as any; // tanpa where
-        if (allRes.error) throw allRes.error;
-
-        const all = Array.isArray(allRes.data) ? allRes.data : [];
-        rows = all
-          .sort((a: any, b: any) => safeTime(b) - safeTime(a))
-          .slice(0, 1000);
-
-        console.log('[Gallery] fallback count:', rows.length);
-      }
-
-      // --- 3) Filter berdasarkan activeView ---
+      // Filter for 'recent' view (last 7 days) - can't easily do in WHERE clause
       let filtered = rows;
-      if (activeView === 'favorites') {
-        filtered = filtered.filter((s: any) => !!s.is_favorite);
-      } else if (activeView === 'archived') {
-        filtered = filtered.filter((s: any) => !!s.is_archived);
-      } else if (activeView === 'recent') {
+      if (activeView === 'recent') {
         const sevenDaysAgo = new Date();
         sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
         filtered = filtered.filter(
           (s: any) => new Date(s.created_at).getTime() >= sevenDaysAgo.getTime()
         );
-      } else if (activeView !== 'all') {
-        // Assume activeView is a folder ID
-        filtered = filtered.filter((s: any) => s.folder_id === activeView);
       }
 
       // =========================
