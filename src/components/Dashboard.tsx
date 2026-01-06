@@ -3,20 +3,9 @@ import { useAuth } from '../contexts/AuthContext';
 import { useElectronScreenshots } from '../hooks/useElectronScreenshots';
 import {
   Camera,
-  Upload,
   Search,
-  Bell,
-  Settings,
-  LogOut,
   Folder,
-  Tag,
   Star,
-  Clock,
-  Archive,
-  BarChart3,
-  HelpCircle,
-  User,
-  Zap,
   Trash2,
   Plus,
 } from 'lucide-react';
@@ -24,6 +13,7 @@ import { Gallery } from './Gallery';
 
 export function Dashboard() {
   const { user, userProfile, signOut } = useAuth();
+  useElectronScreenshots();
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
 
