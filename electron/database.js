@@ -256,76 +256,6 @@ function getDatabaseInfo() {
   };
 }
 
-function exportDatabase(exportPath) {
-  if (!db) throw new Error('Database not initialized');
-
-  const exportData = {
-    metadata: db.prepare('SELECT * FROM database_metadata').all(),
-    folders: db.prepare('SELECT * FROM folders').all(),
-    screenshots: db.prepare('SELECT * FROM screenshots').all(),
-    appSettings: db.prepare('SELECT * FROM app_settings').all(),
-    exportDate: new Date().toISOString()
-  };
-
-  fs.writeFileSync(exportPath, JSON.stringify(exportData, null, 2));
-  console.log('Database exported to:', exportPath);
-  return exportPath;
-}
-
-function importDatabase(importPath) {
-  if (!fs.existsSync(importPath)) {
-    throw new Error('Import file not found');
-  }
-
-  const importData = JSON.parse(fs.readFileSync(importPath, 'utf8'));
-
-  // Import data dengan transaction
-  const transaction = db.transaction(() => {
-    // Import folders
-    if (importData.folders) {
-      const insertFolder = db.prepare(`
-        INSERT OR REPLACE INTO folders 
-        (id, name, parent_id, color, icon, screenshot_count, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `);
-
-      importData.folders.forEach(folder => {
-        insertFolder.run(
-          folder.id, folder.name, folder.parent_id,
-          folder.color, folder.icon, folder.screenshot_count, folder.created_at
-        );
-      });
-    }
-
-    // Import screenshots
-    if (importData.screenshots) {
-      const insertScreenshot = db.prepare(`
-        INSERT OR REPLACE INTO screenshots 
-        (id, file_name, file_size, file_type, width, height, storage_path,
-         thumbnail_path, ocr_text, ocr_confidence, ai_description, ai_tags,
-         custom_tags, user_notes, is_favorite, is_archived, folder_id, source,
-         view_count, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-
-      importData.screenshots.forEach(screenshot => {
-        insertScreenshot.run(
-          screenshot.id, screenshot.file_name, screenshot.file_size,
-          screenshot.file_type, screenshot.width, screenshot.height, screenshot.storage_path,
-          screenshot.thumbnail_path, screenshot.ocr_text, screenshot.ocr_confidence,
-          screenshot.ai_description, screenshot.ai_tags, screenshot.custom_tags,
-          screenshot.user_notes, screenshot.is_favorite, screenshot.is_archived,
-          screenshot.folder_id, screenshot.source, screenshot.view_count,
-          screenshot.created_at, screenshot.updated_at
-        );
-      });
-    }
-  });
-
-  transaction();
-  console.log('Database imported from:', importPath);
-}
-
 function closeDatabase() {
   if (db) {
     db.close();
@@ -337,7 +267,5 @@ module.exports = {
   initDatabase,
   getDatabase,
   getDatabaseInfo,
-  exportDatabase,
-  importDatabase,
   closeDatabase,
 };
