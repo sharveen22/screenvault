@@ -405,17 +405,6 @@ ipcMain.on('popup:close', () => {
   if (popupWindow && !popupWindow.isDestroyed()) popupWindow.close();
 });
 
-ipcMain.on('popup:copy', () => {
-  // Logic handled in renderer or main? 
-  // Since we have the file path in main, we can do it here if we track currentScreenshotPath
-  // But easier to just re-read file or use clipboard API
-  // Actually, we need the current screenshot path.
-  // Let's store it temporarily or pass it back.
-  // For now, let's assume the popup has the path.
-  // Simpler: The popup just sends the signal, main process handles it.
-  // We need to track the last screenshot path.
-});
-
 ipcMain.on('popup:save', (_event, dataUrl) => {
   if (lastScreenshotPath) {
     try {
