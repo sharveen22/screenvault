@@ -24,7 +24,6 @@ import { Gallery } from './Gallery';
 
 export function Dashboard() {
   const { user, userProfile, signOut } = useAuth();
-  const { isElectron, takeScreenshot } = useElectronScreenshots();
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -75,12 +74,6 @@ export function Dashboard() {
     };
   }, [handleGlobalPaste, handleKeyboardShortcut]);
 
-  const sidebarItems = [
-    { id: 'all', icon: Camera, label: 'All Screenshots', count: userProfile?.screenshot_count || 0 },
-    { id: 'favorites', icon: Star, label: 'Favorites' },
-    // { id: 'recent', icon: Clock, label: 'Recent' },
-    // { id: 'archived', icon: Archive, label: 'Archived' },
-  ];
 
   const shortcuts = [
     { keys: ['⌘', 'Shift', 'S'], label: 'Take Screenshot' },
