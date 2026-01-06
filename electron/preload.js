@@ -65,8 +65,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   db: {
     query: (params) => ipcRenderer.invoke('db:query', params),
     getInfo: () => ipcRenderer.invoke('db:get-info'),
-    export: (exportPath) => ipcRenderer.invoke('db:export', exportPath),
-    import: (importPath) => ipcRenderer.invoke('db:import', importPath),
     getPath: () => ipcRenderer.invoke('db:get-path'),
   },
   folder: {

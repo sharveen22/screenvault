@@ -1030,28 +1030,6 @@ ipcMain.handle('db:get-info', async () => {
   }
 });
 
-ipcMain.handle('db:export', async (_e, exportPath) => {
-  try {
-    const { exportDatabase } = require('./database');
-    const result = exportDatabase(exportPath);
-    return { data: result, error: null };
-  } catch (error) {
-    return { data: null, error: error.message };
-  }
-});
-
-ipcMain.handle('db:import', async (_e, importPath) => {
-  try {
-    const { importDatabase } = require('./database');
-    importDatabase(importPath);
-    return { data: true, error: null };
-  } catch (error) {
-    return { data: null, error: error.message };
-  }
-});
-
-
-
 /* ====================== Folder Handlers ====================== */
 ipcMain.handle('folder:list', async () => {
   try {
