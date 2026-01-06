@@ -21,7 +21,6 @@ import {
   Plus,
 } from 'lucide-react';
 import { Gallery } from './Gallery';
-import { UploadZone } from './UploadZone';
 
 export function Dashboard() {
   const { user, userProfile, signOut } = useAuth();
@@ -37,7 +36,6 @@ export function Dashboard() {
 
     return () => clearTimeout(timer);
   }, [searchInput]);
-  const [showUploadZone, setShowUploadZone] = useState(false);
   const [activeView, setActiveView] = useState<'all' | 'favorites' | 'recent' | 'archived' | string>('all');
 
   const handleGlobalPaste = useCallback(
@@ -50,7 +48,6 @@ export function Dashboard() {
       );
 
       if (hasImage) {
-        setShowUploadZone(true);
       }
     },
     []
@@ -60,7 +57,6 @@ export function Dashboard() {
     (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'u') {
         e.preventDefault();
-        setShowUploadZone(true);
       }
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
@@ -392,15 +388,11 @@ export function Dashboard() {
             </div>
           </div>
 
-          {showUploadZone ? (
-            <UploadZone onClose={() => setShowUploadZone(false)} />
-          ) : (
             <Gallery
               searchQuery={searchQuery}
               activeView={activeView}
               onDropSuccess={loadFolders}
             />
-          )}
         </div>
       </div>
 
