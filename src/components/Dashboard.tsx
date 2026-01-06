@@ -26,7 +26,17 @@ import { UploadZone } from './UploadZone';
 export function Dashboard() {
   const { user, userProfile, signOut } = useAuth();
   const { isElectron, takeScreenshot } = useElectronScreenshots();
+  const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Debounce search input
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearchQuery(searchInput);
+    }, 300); // 300ms delay
+
+    return () => clearTimeout(timer);
+  }, [searchInput]);
   const [showUploadZone, setShowUploadZone] = useState(false);
   const [activeView, setActiveView] = useState<'all' | 'favorites' | 'recent' | 'archived' | string>('all');
 
@@ -375,8 +385,8 @@ export function Dashboard() {
               <input
                 type="text"
                 placeholder="Search screenshots..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
                 style={{ background: 'transparent', border: 'none', outline: 'none', fontSize: '18px', width: '100%', fontFamily: 'Space Grotesk' }}
               />
             </div>
