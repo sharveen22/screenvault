@@ -142,7 +142,12 @@ export function Editor() {
 
     // --- Rendering ---
     useEffect(() => {
-        renderCanvas();
+        // Use requestAnimationFrame for smoother 60fps rendering
+        const frameId = requestAnimationFrame(() => {
+            renderCanvas();
+        });
+        
+        return () => cancelAnimationFrame(frameId);
     }, [imageBitmap, annotations, currentAnnotation, selectedId, activeTool]);
 
     const renderCanvas = () => {
