@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { db, Screenshot } from '../lib/database';
 import { Star, FolderOpen, Share2, Trash2, Image as ImageIcon, RefreshCcw } from 'lucide-react';
 import { ScreenshotModal } from './ScreenshotModal';
@@ -383,13 +383,42 @@ function ScreenshotCard({
   onDragStart: (e: React.DragEvent, screenshot: Screenshot) => void;
 }) {
   const [imageUrl, setImageUrl] = useState<string>('');
+  const [isVisible, setIsVisible] = useState(false);
+  const cardRef = useRef<HTMLDivElement>(null);
 
+  // Intersection Observer for lazy loading
   useEffect(() => {
-    getImageUrl(screenshot.storage_path).then(setImageUrl);
-  }, [screenshot.storage_path]);
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            setIsVisible(true);
+            observer.disconnect();
+          }
+        });
+      },
+      {
+        rootMargin: '100px', // Start loading 100px before entering viewport
+      }
+    );
+
+    if (cardRef.current) {
+      observer.observe(cardRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, []);
+
+  // Only load image when visible
+  useEffect(() => {
+    if (isVisible && !imageUrl) {
+      getImageUrl(screenshot.storage_path).then(setImageUrl);
+    }
+  }, [isVisible, screenshot.storage_path, imageUrl]);
 
   return (
     <div
+      ref={cardRef}
       onClick={() => onSelect(screenshot)}
       draggable
       onDragStart={(e) => onDragStart(e, screenshot)}
