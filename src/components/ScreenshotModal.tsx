@@ -23,6 +23,7 @@ export function ScreenshotModal({ screenshot, onClose, onUpdate }: ScreenshotMod
   const [newTag, setNewTag] = useState('');
   const [isFavorite, setIsFavorite] = useState(screenshot.is_favorite);
   const [imageUrl, setImageUrl] = useState<string>('');
+  const [imageLoading, setImageLoading] = useState(true);
   const [newNote, setNewNote] = useState('');
   const [noteHistory, setNoteHistory] = useState<Array<{ text: string; timestamp: string }>>(screenshot.note_history || []);
 
@@ -40,8 +41,14 @@ export function ScreenshotModal({ screenshot, onClose, onUpdate }: ScreenshotMod
   }, [screenshot.note_history]);
 
   const loadImage = async () => {
-    const { data } = await window.electronAPI!.file.read(screenshot.storage_path);
-    setImageUrl(`data:image/png;base64,${data}`);
+    setImageLoading(true);
+    // Use requestIdleCallback or setTimeout to defer image loading slightly
+    // This allows the modal to open quickly and show UI first
+    requestIdleCallback(async () => {
+      const { data } = await window.electronAPI!.file.read(screenshot.storage_path);
+      setImageUrl(`data:image/png;base64,${data}`);
+      setImageLoading(false);
+    });
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, action: () => void) => {
