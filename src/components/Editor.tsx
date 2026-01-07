@@ -44,8 +44,26 @@ export function Editor() {
     // Crop State
     const [cropRect, setCropRect] = useState<{ x: number, y: number, w: number, h: number } | null>(null);
 
+    // Window size state for responsive toolbar
+    const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
+
+    // --- Window Resize Handler ---
+    useEffect(() => {
+        const handleResize = () => {
+            const newWidth = window.innerWidth;
+            console.log('[Editor] Window resized to:', newWidth);
+            setWindowWidth(newWidth);
+        };
+
+        // Set initial width
+        handleResize();
+
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
 
     // --- Init ---
     useEffect(() => {
@@ -500,83 +518,110 @@ export function Editor() {
         }
     };
 
-    if (!imageBitmap) return <div className="h-screen w-screen bg-[#1e1e1e] flex items-center justify-center text-white">Loading...</div>;
+    if (!imageBitmap) return <div className="h-screen w-screen flex items-center justify-center" style={{ backgroundColor: '#e9e6e4', color: '#161419', fontFamily: 'Space Grotesk, sans-serif' }}>Loading...</div>;
+
+    // Responsive breakpoints - scale elements instead of hiding them
+    const isCompact = windowWidth < 900;
+    const isVeryCompact = windowWidth < 700;
+    const isTiny = windowWidth < 500;
+
+    console.log('[Editor] Render - windowWidth:', windowWidth, 'isCompact:', isCompact, 'isVeryCompact:', isVeryCompact, 'isTiny:', isTiny);
+
+    // Dynamic sizing based on window width
+    const iconSize = isTiny ? 14 : isVeryCompact ? 16 : 18;
+    const colorSize = isTiny ? 'w-3 h-3' : isVeryCompact ? 'w-4 h-4' : isCompact ? 'w-4 h-4' : 'w-5 h-5';
+    const buttonPadding = isTiny ? 'p-1' : 'p-2';
+    const toolbarGap = isTiny ? 'gap-1' : isVeryCompact ? 'gap-2' : 'gap-3';
 
     return (
-        <div className="h-screen w-screen bg-[#1e1e1e] flex flex-col text-white overflow-hidden">
+        <div className="h-screen w-screen flex flex-col overflow-hidden" style={{ backgroundColor: '#e9e6e4', color: '#161419' }}>
             {/* Window Drag Handle */}
-            <div className="h-3 bg-[#252525] w-full shrink-0" style={{ WebkitAppRegion: 'drag' } as any} />
+            <div className="h-3 w-full shrink-0" style={{ backgroundColor: '#e9e6e4', WebkitAppRegion: 'drag' } as any} />
 
             {/* Toolbar */}
-            <div className="h-14 bg-[#252525] flex items-center justify-between px-4 border-b border-[#333] select-none shadow-md" style={{ WebkitAppRegion: 'drag' } as any}>
-                <div className="flex items-center gap-3" style={{ WebkitAppRegion: 'no-drag' } as any}>
-                    {/* Tools */}
-                    <div className="flex items-center gap-1 bg-[#333] rounded-lg p-1">
-                        <ToolButton icon={<MousePointer2 size={18} />} active={activeTool === 'select'} onClick={() => setActiveTool('select')} title="Select" />
-                        <ToolButton icon={<Pen size={18} />} active={activeTool === 'pen'} onClick={() => setActiveTool('pen')} title="Pen" />
-                        <ToolButton icon={<Type size={18} />} active={activeTool === 'text'} onClick={() => setActiveTool('text')} title="Text" />
-                        <ToolButton icon={<Square size={18} />} active={activeTool === 'rect'} onClick={() => setActiveTool('rect')} title="Rectangle" />
-                        <ToolButton icon={<ArrowRight size={18} />} active={activeTool === 'arrow'} onClick={() => setActiveTool('arrow')} title="Arrow" />
-                        <div className="w-px h-6 bg-[#444] mx-1" />
-                        <ToolButton icon={<Crop size={18} />} active={activeTool === 'crop'} onClick={() => setActiveTool('crop')} title="Crop" />
-                    </div>
-
-                    {/* History */}
-                    <div className="flex items-center gap-1">
-                        <IconButton icon={<Undo size={18} />} onClick={handleUndo} disabled={historyStep <= 0} title="Undo" />
-                        <IconButton icon={<Redo size={18} />} onClick={handleRedo} disabled={historyStep >= history.length - 1} title="Redo" />
-                    </div>
-
-                    {/* Properties */}
-                    <div className="flex items-center gap-3 px-3 border-l border-[#444]">
-                        <div className="flex gap-1">
-                            {COLORS.map(c => (
-                                <button
-                                    key={c}
-                                    onClick={() => updateSelectedProperty('color', c)}
-                                    className={`w-5 h-5 rounded-full border border-gray-600 ${currentColor === c ? 'ring-2 ring-white' : ''}`}
-                                    style={{ background: c }}
-                                />
-                            ))}
+            <div className="h-auto min-h-14 border-b select-none shadow-sm overflow-visible" style={{ backgroundColor: '#e9e6e4', borderColor: '#94918f', WebkitAppRegion: 'drag' } as any}>
+                <div className={`flex flex-wrap items-center ${toolbarGap} px-4 py-2 w-full`}>
+                    {/* Left Section - Tools & Properties */}
+                    <div className={`flex items-center flex-wrap ${toolbarGap} flex-1 min-w-0`} style={{ WebkitAppRegion: 'no-drag' } as any}>
+                        {/* Tools */}
+                        <div className={`flex items-center ${isTiny ? 'gap-0.5' : 'gap-1'} rounded-lg ${isTiny ? 'p-0.5' : 'p-1'} flex-shrink-0`} style={{ backgroundColor: '#d4d1cf' }}>
+                            <ToolButton icon={<MousePointer2 size={iconSize} />} active={activeTool === 'select'} onClick={() => setActiveTool('select')} title="Select" padding={buttonPadding} />
+                            <ToolButton icon={<Pen size={iconSize} />} active={activeTool === 'pen'} onClick={() => setActiveTool('pen')} title="Pen" padding={buttonPadding} />
+                            <ToolButton icon={<Type size={iconSize} />} active={activeTool === 'text'} onClick={() => setActiveTool('text')} title="Text" padding={buttonPadding} />
+                            <ToolButton icon={<Square size={iconSize} />} active={activeTool === 'rect'} onClick={() => setActiveTool('rect')} title="Rectangle" padding={buttonPadding} />
+                            <ToolButton icon={<ArrowRight size={iconSize} />} active={activeTool === 'arrow'} onClick={() => setActiveTool('arrow')} title="Arrow" padding={buttonPadding} />
+                            {!isTiny && <div className="w-px h-6 mx-1" style={{ backgroundColor: '#94918f' }} />}
+                            <ToolButton icon={<Crop size={iconSize} />} active={activeTool === 'crop'} onClick={() => setActiveTool('crop')} title="Crop" padding={buttonPadding} />
                         </div>
-                        <div className="flex items-center gap-2 ml-2">
-                            <span className="text-xs text-gray-400">Size</span>
-                            <input
-                                type="range"
-                                min="1"
-                                max="20"
-                                value={currentSize}
-                                onChange={(e) => updateSelectedProperty('size', parseInt(e.target.value))}
-                                className="w-20 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer"
-                            />
-                            <span className="text-xs text-gray-400 w-4">{currentSize}</span>
+
+                        {/* History */}
+                        <div className={`flex items-center ${isTiny ? 'gap-0.5' : 'gap-1'} flex-shrink-0`}>
+                            <IconButton icon={<Undo size={iconSize} />} onClick={handleUndo} disabled={historyStep <= 0} title="Undo" padding={buttonPadding} />
+                            <IconButton icon={<Redo size={iconSize} />} onClick={handleRedo} disabled={historyStep >= history.length - 1} title="Redo" padding={buttonPadding} />
+                        </div>
+
+                        {/* Color Palette - Always visible, scales down */}
+                        <div className={`flex items-center ${isTiny ? 'gap-1' : 'gap-2'} flex-shrink-0 ${!isTiny && !isVeryCompact ? 'px-3' : ''}`} style={{ borderLeft: !isTiny && !isVeryCompact ? '1px solid #94918f' : 'none' }}>
+                            <div className={`flex ${isTiny ? 'gap-0.5' : 'gap-1'}`}>
+                                {COLORS.map(c => (
+                                    <button
+                                        key={c}
+                                        onClick={() => updateSelectedProperty('color', c)}
+                                        className={`${colorSize} rounded-full flex-shrink-0 transition-all ${currentColor === c ? 'ring-2' : 'ring-1'}`}
+                                        style={{ background: c, ringColor: currentColor === c ? '#161419' : '#94918f' }}
+                                        title={c}
+                                    />
+                                ))}
+                            </div>
+                            {/* Size slider - hide only on tiny screens */}
+                            {!isTiny && !isVeryCompact && (
+                                <div className="flex items-center gap-2 ml-2 flex-shrink-0">
+                                    <span className="text-xs whitespace-nowrap" style={{ color: '#161419', fontFamily: 'Inter, sans-serif', opacity: 0.6 }}>Size</span>
+                                    <input
+                                        type="range"
+                                        min="1"
+                                        max="20"
+                                        value={currentSize}
+                                        onChange={(e) => updateSelectedProperty('size', parseInt(e.target.value))}
+                                        className="w-20 h-1 rounded-lg appearance-none cursor-pointer"
+                                        style={{ backgroundColor: '#94918f' }}
+                                    />
+                                    <span className="text-xs w-4" style={{ color: '#161419', fontFamily: 'Inter, sans-serif', opacity: 0.6 }}>{currentSize}</span>
+                                </div>
+                            )}
                         </div>
                     </div>
-                </div>
 
-                <div className="flex items-center gap-3" style={{ WebkitAppRegion: 'no-drag' } as any}>
-                    {activeTool === 'crop' && (
-                        <div className="flex items-center gap-2 mr-4">
-                            <button onClick={applyCrop} className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded text-sm font-medium">
-                                <Check size={14} /> Apply
+                    {/* Right Section - Actions */}
+                    <div className={`flex items-center ${toolbarGap} flex-shrink-0`} style={{ WebkitAppRegion: 'no-drag' } as any}>
+                        {activeTool === 'crop' && (
+                            <button onClick={applyCrop} className={`flex items-center ${isTiny ? 'gap-0.5 px-2 py-1' : 'gap-1 px-3 py-1.5'} rounded ${isTiny ? 'text-xs' : 'text-sm'} font-medium whitespace-nowrap transition-colors`} style={{ backgroundColor: '#161419', color: '#e9e6e4', fontFamily: 'Space Grotesk, sans-serif' }}>
+                                <Check size={isTiny ? 12 : 14} /> {!isTiny && 'Apply'}
                             </button>
-                        </div>
-                    )}
+                        )}
 
-                    <IconButton icon={<Trash2 size={18} />} onClick={() => window.electronAPI.trash()} className="hover:bg-red-900/30 text-red-400" title="Delete File" />
-                    <div className="w-px h-6 bg-[#333]" />
-                    <IconButton icon={<Copy size={18} />} onClick={handleCopy} title="Copy" />
-                    <IconButton icon={<Share2 size={18} />} onClick={handleShare} title="Share" />
-                    <button onClick={handleDone} className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-md text-sm font-medium transition-colors shadow-sm ml-2">
-                        Done
-                    </button>
+                        {/* Trash - Always visible, scales down */}
+                        <IconButton icon={<Trash2 size={iconSize} />} onClick={() => window.electronAPI.trash()} className="text-red-600" title="Delete File" padding={buttonPadding} hoverBg="#f5e5e5" />
+                        
+                        {!isTiny && <div className="w-px h-6" style={{ backgroundColor: '#94918f' }} />}
+                        
+                        <IconButton icon={<Copy size={iconSize} />} onClick={handleCopy} title="Copy" padding={buttonPadding} />
+                        
+                        {/* Share - hide only on very small screens */}
+                        {!isVeryCompact && <IconButton icon={<Share2 size={iconSize} />} onClick={handleShare} title="Share" padding={buttonPadding} />}
+                        
+                        <button onClick={handleDone} className={`${isTiny ? 'px-2 py-1 text-xs' : 'px-4 py-1.5 text-sm'} rounded-md font-medium transition-colors shadow-sm whitespace-nowrap`} style={{ backgroundColor: '#161419', color: '#e9e6e4', fontFamily: 'Space Grotesk, sans-serif' }}>
+                            Done
+                        </button>
+                    </div>
                 </div>
             </div>
 
             {/* Canvas Container */}
             <div
                 ref={containerRef}
-                className="flex-1 flex items-center justify-center p-8 bg-[#1e1e1e] relative overflow-hidden"
+                className="flex-1 flex items-center justify-center p-8 relative overflow-hidden"
+                style={{ backgroundColor: '#e9e6e4' }}
                 onMouseDown={handleMouseDown}
                 onMouseMove={handleMouseMove}
                 onMouseUp={handleMouseUp}
@@ -731,11 +776,28 @@ function CropOverlay({ rect, onChange, containerWidth, containerHeight }: any) {
     );
 }
 
-function ToolButton({ icon, active, onClick, title }: any) {
+function ToolButton({ icon, active, onClick, title, padding = 'p-2' }: any) {
     return (
         <button
             onClick={onClick}
-            className={`p-2 rounded-md transition-all ${active ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-400 hover:bg-[#444] hover:text-white'}`}
+            className={`${padding} rounded-md transition-all`}
+            style={{
+                backgroundColor: active ? '#161419' : 'transparent',
+                color: active ? '#e9e6e4' : '#161419',
+                opacity: active ? 1 : 0.6,
+            }}
+            onMouseEnter={(e) => {
+                if (!active) {
+                    e.currentTarget.style.backgroundColor = '#c4c1bf';
+                    e.currentTarget.style.opacity = '1';
+                }
+            }}
+            onMouseLeave={(e) => {
+                if (!active) {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                    e.currentTarget.style.opacity = '0.6';
+                }
+            }}
             title={title}
         >
             {icon}
@@ -743,12 +805,29 @@ function ToolButton({ icon, active, onClick, title }: any) {
     );
 }
 
-function IconButton({ icon, onClick, disabled, className, title }: any) {
+function IconButton({ icon, onClick, disabled, className, title, padding = 'p-2', hoverBg = '#c4c1bf' }: any) {
     return (
         <button
             onClick={onClick}
             disabled={disabled}
-            className={`p-2 rounded-md transition-colors ${disabled ? 'opacity-30 cursor-not-allowed' : 'hover:bg-[#333] text-gray-300 hover:text-white'} ${className}`}
+            className={`${padding} rounded-md transition-colors ${className}`}
+            style={{
+                color: disabled ? '#94918f' : className?.includes('text-red') ? '#dc2626' : '#161419',
+                cursor: disabled ? 'not-allowed' : 'pointer',
+                opacity: disabled ? 0.3 : 0.6,
+            }}
+            onMouseEnter={(e) => {
+                if (!disabled) {
+                    e.currentTarget.style.backgroundColor = hoverBg;
+                    e.currentTarget.style.opacity = '1';
+                }
+            }}
+            onMouseLeave={(e) => {
+                if (!disabled) {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                    e.currentTarget.style.opacity = '0.6';
+                }
+            }}
             title={title}
         >
             {icon}
