@@ -99,4 +99,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('ocr:process', handler);
     return () => ipcRenderer.removeListener('ocr:process', handler);
   },
+  
+  // Import APIs
+  import: {
+    files: () => ipcRenderer.invoke('import:files'),
+    folder: () => ipcRenderer.invoke('import:folder'),
+    getScreenVaultPath: () => ipcRenderer.invoke('import:getScreenVaultPath'),
+    openScreenVaultFolder: () => ipcRenderer.invoke('import:openScreenVaultFolder'),
+  },
+  
+  // Import event listeners
+  onScreenshotImported: (callback) => {
+    const handler = (_evt, data) => callback(data);
+    ipcRenderer.on('screenshot-imported', handler);
+    return () => ipcRenderer.removeListener('screenshot-imported', handler);
+  },
+  onFolderCreated: (callback) => {
+    const handler = (_evt, data) => callback(data);
+    ipcRenderer.on('folder-created', handler);
+    return () => ipcRenderer.removeListener('folder-created', handler);
+  },
 });
