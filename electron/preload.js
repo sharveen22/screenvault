@@ -20,6 +20,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     };
   },
 
+  onScreenshotSaved: (callback) => {
+    if (typeof callback !== 'function') return;
+    const handler = (_evt, data) => callback(data);
+    ipcRenderer.on('screenshot-saved', handler);
+    return () => {
+      try {
+        ipcRenderer.removeListener('screenshot-saved', handler);
+      } catch { }
+    };
+  },
+
   offScreenshotCaptured: (callback) => {
     // optional explicit off
     for (const h of screenshotListeners) {

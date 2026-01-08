@@ -283,7 +283,268 @@ function loadTrayIconCamera() {
 /* ====================== Screenshot Popup ====================== */
 let popupWindow = null;
 let popupTimeout = null;
+let thumbnailWindow = null;
 
+// Apple-style thumbnail preview in bottom-left corner
+function createThumbnailPreview(filePath) {
+  // Close existing thumbnail if any
+  if (thumbnailWindow && !thumbnailWindow.isDestroyed()) {
+    thumbnailWindow.close();
+  }
+  thumbnailWindow = null;
+
+  // Clear existing timeout
+  if (popupTimeout) {
+    clearTimeout(popupTimeout);
+    popupTimeout = null;
+  }
+
+  const { screen } = require('electron');
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
+
+  // Thumbnail size (Apple-style small preview)
+  const thumbWidth = 180;
+  const thumbHeight = 120;
+  const padding = 20;
+
+  // Position in bottom-left corner (like macOS)
+  const x = padding;
+  const y = screenHeight - thumbHeight - padding;
+
+  thumbnailWindow = new BrowserWindow({
+    width: thumbWidth,
+    height: thumbHeight,
+    x: x,
+    y: y,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    closable: true,
+    skipTaskbar: true,
+    hasShadow: true,
+    show: false,
+    focusable: false, // Don't steal focus
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+    }
+  });
+
+  // Create simple HTML for thumbnail with click handler
+  const img = nativeImage.createFromPath(filePath);
+  const dataUrl = img.toDataURL();
+  
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body {
+          width: 100%;
+          height: 100%;
+          overflow: hidden;
+          background: transparent;
+        }
+        body {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+        }
+        .thumbnail {
+          width: 100%;
+          height: 100%;
+          border-radius: 10px;
+          overflow: hidden;
+          box-shadow: 0 10px 40px rgba(22, 20, 25, 0.35);
+          background: #e9e6e4;
+          border: 1px solid #94918f;
+          transition: transform 0.15s ease, box-shadow 0.15s ease;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 6px;
+          position: relative;
+        }
+        .thumbnail:hover {
+          transform: scale(1.05);
+          box-shadow: 0 15px 50px rgba(22, 20, 25, 0.45);
+        }
+        img {
+          max-width: 100%;
+          max-height: 100%;
+          object-fit: contain;
+          border-radius: 4px;
+          box-shadow: 0 2px 8px rgba(22, 20, 25, 0.15);
+        }
+        .progress-bar {
+          position: absolute;
+          bottom: 0;
+          left: 0;
+          height: 3px;
+          background: #161419;
+          border-radius: 0 0 10px 10px;
+          animation: shrink 6s linear forwards;
+        }
+        @keyframes shrink {
+          from { width: 100%; }
+          to { width: 0%; }
+        }
+      </style>
+    </head>
+    <body>
+      <div class="thumbnail">
+        <img src="${dataUrl}" alt="Screenshot" />
+        <div class="progress-bar"></div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  thumbnailWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+  
+  // Handle click - use will-navigate trick
+  thumbnailWindow.webContents.on('did-finish-load', () => {
+    thumbnailWindow.webContents.executeJavaScript(`
+      document.body.addEventListener('click', function() {
+        window.location.href = 'thumbnail-click://open';
+      });
+    `);
+  });
+  
+  // Intercept navigation to detect click
+  thumbnailWindow.webContents.on('will-navigate', (event, url) => {
+    if (url.startsWith('thumbnail-click://')) {
+      event.preventDefault();
+      handleThumbnailClick(filePath);
+    }
+  });
+
+  thumbnailWindow.once('ready-to-show', () => {
+    if (!thumbnailWindow.isDestroyed()) {
+      thumbnailWindow.show();
+      sendLog('Thumbnail preview shown');
+      
+      // Auto-dismiss and save after 6 seconds
+      popupTimeout = setTimeout(() => {
+        sendLog('Thumbnail timeout - auto-saving screenshot');
+        if (thumbnailWindow && !thumbnailWindow.isDestroyed()) {
+          thumbnailWindow.close();
+          thumbnailWindow = null;
+        }
+        popupTimeout = null;
+        
+        // Auto-save the screenshot to database
+        const savedId = saveScreenshotToDatabase(lastScreenshotPath);
+        
+        if (savedId) {
+          // Notify main window to refresh gallery
+          if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
+            sendLog('Sending screenshot-saved event to main window');
+            mainWindow.webContents.send('screenshot-saved', { id: savedId });
+            
+            // Also reload the page to ensure gallery refreshes
+            setTimeout(() => {
+              if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
+                mainWindow.webContents.reload();
+                sendLog('Reloaded main window to refresh gallery');
+              }
+            }, 100);
+          }
+        }
+      }, 6000);
+    }
+  });
+
+  thumbnailWindow.on('closed', () => {
+    if (popupTimeout) {
+      clearTimeout(popupTimeout);
+      popupTimeout = null;
+    }
+    thumbnailWindow = null;
+  });
+}
+
+// Handle thumbnail click - open editor popup
+function handleThumbnailClick(filePath) {
+  sendLog('Thumbnail clicked - opening editor');
+  
+  // Clear the auto-dismiss timeout
+  if (popupTimeout) {
+    clearTimeout(popupTimeout);
+    popupTimeout = null;
+  }
+  
+  // Close thumbnail
+  if (thumbnailWindow && !thumbnailWindow.isDestroyed()) {
+    thumbnailWindow.close();
+    thumbnailWindow = null;
+  }
+  
+  // Open editor popup (don't save yet - wait for user to click Done)
+  lastScreenshotPath = filePath;
+  screenshotWasSaved = false;
+  createScreenshotPopup(filePath);
+}
+
+// Save screenshot directly to database
+function saveScreenshotToDatabase(filePath) {
+  try {
+    const db = getDatabase();
+    const stats = fs.statSync(filePath);
+    const id = crypto.randomUUID();
+    const fileName = path.basename(filePath);
+    
+    // Get image dimensions
+    const img = nativeImage.createFromPath(filePath);
+    const size = img.getSize();
+    
+    const stmt = db.prepare(`
+      INSERT INTO screenshots (
+        id, file_name, file_size, file_type, width, height, 
+        storage_path, source, ocr_text, ocr_confidence, 
+        custom_tags, ai_tags, user_notes, is_favorite, is_archived,
+        thumbnail_path, ai_description, folder_id, view_count
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    
+    stmt.run(
+      id,
+      fileName,
+      stats.size,
+      'image/png',
+      size.width || 0,
+      size.height || 0,
+      filePath,
+      'desktop',
+      '',           // ocr_text
+      null,         // ocr_confidence
+      '[]',         // custom_tags
+      '[]',         // ai_tags
+      '',           // user_notes
+      0,            // is_favorite
+      0,            // is_archived
+      null,         // thumbnail_path
+      null,         // ai_description
+      null,         // folder_id
+      0             // view_count
+    );
+    
+    sendLog(`Screenshot saved to database: ${id} - ${fileName}`);
+    return id;
+  } catch (e) {
+    sendLog(`saveScreenshotToDatabase error: ${e}`, 'error');
+    return null;
+  }
+}
+
+// Keep the old popup for editor functionality (but won't be used for initial capture)
 function createScreenshotPopup(filePath) {
   if (popupWindow) {
     if (!popupWindow.isDestroyed()) {
@@ -415,11 +676,23 @@ ipcMain.on('popup:save', (_event, dataUrl) => {
       // Mark as saved so it won't be deleted on close
       screenshotWasSaved = true;
 
-      // NOW emit to main window
-      emitScreenshotToRenderer(lastScreenshotPath, null);
-
-      // Also notify other windows if needed (redundant if emitScreenshotToRenderer handles it)
-      // emitScreenshotToRenderer usually sends to mainWindow.webContents
+      // Save to database
+      const savedId = saveScreenshotToDatabase(lastScreenshotPath);
+      
+      // Close the editor popup
+      if (popupWindow && !popupWindow.isDestroyed()) {
+        popupWindow.close();
+      }
+      
+      // Refresh main window to show new screenshot
+      if (savedId && mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
+        mainWindow.webContents.send('screenshot-saved', { id: savedId });
+        setTimeout(() => {
+          if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
+            mainWindow.webContents.reload();
+          }
+        }, 100);
+      }
     } catch (e) {
       sendLog(`Save error: ${e}`, 'error');
     }
@@ -518,9 +791,19 @@ async function takeScreenshotSystem() {
   try {
     const outPath = await captureWithSystem();
     if (outPath) {
-      // emitScreenshotToRenderer(outPath, null); // Don't emit yet! Wait for popup action.
       lastScreenshotPath = outPath;
-      createScreenshotPopup(outPath); // Show popup
+      
+      // Auto-copy to clipboard immediately (so user can paste right away)
+      try {
+        const img = nativeImage.createFromPath(outPath);
+        clipboard.writeImage(img);
+        sendLog('Screenshot auto-copied to clipboard');
+      } catch (e) {
+        sendLog(`Failed to copy to clipboard: ${e}`, 'error');
+      }
+      
+      // Show Apple-style thumbnail preview (bottom-left corner)
+      createThumbnailPreview(outPath);
     }
     else sendLog('Capture canceled or failed');
   } catch (e) {
