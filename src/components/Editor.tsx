@@ -45,24 +45,37 @@ export function Editor() {
     const [cropRect, setCropRect] = useState<{ x: number, y: number, w: number, h: number } | null>(null);
 
     // Window size state for responsive toolbar
-    const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+    const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 900);
 
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
 
     // --- Window Resize Handler ---
     useEffect(() => {
-        const handleResize = () => {
-            const newWidth = window.innerWidth;
-            console.log('[Editor] Window resized to:', newWidth);
+        const updateWidth = () => {
+            const newWidth = document.documentElement.clientWidth || window.innerWidth;
             setWindowWidth(newWidth);
         };
 
         // Set initial width
-        handleResize();
+        updateWidth();
 
-        window.addEventListener('resize', handleResize);
-        return () => window.removeEventListener('resize', handleResize);
+        // Use both resize event and ResizeObserver for reliability
+        window.addEventListener('resize', updateWidth);
+        
+        // ResizeObserver is more reliable in Electron
+        let resizeObserver: ResizeObserver | null = null;
+        if (typeof ResizeObserver !== 'undefined') {
+            resizeObserver = new ResizeObserver(() => {
+                updateWidth();
+            });
+            resizeObserver.observe(document.body);
+        }
+
+        return () => {
+            window.removeEventListener('resize', updateWidth);
+            resizeObserver?.disconnect();
+        };
     }, []);
 
     // --- Init ---
@@ -523,94 +536,108 @@ export function Editor() {
     // Responsive breakpoints - scale elements instead of hiding them
     const isCompact = windowWidth < 900;
     const isVeryCompact = windowWidth < 700;
-    const isTiny = windowWidth < 500;
+    const isTiny = windowWidth < 550;
+    const isUltraTiny = windowWidth < 450;
 
-    console.log('[Editor] Render - windowWidth:', windowWidth, 'isCompact:', isCompact, 'isVeryCompact:', isVeryCompact, 'isTiny:', isTiny);
-
-    // Dynamic sizing based on window width
-    const iconSize = isTiny ? 14 : isVeryCompact ? 16 : 18;
-    const colorSize = isTiny ? 'w-3 h-3' : isVeryCompact ? 'w-4 h-4' : isCompact ? 'w-4 h-4' : 'w-5 h-5';
-    const buttonPadding = isTiny ? 'p-1' : 'p-2';
-    const toolbarGap = isTiny ? 'gap-1' : isVeryCompact ? 'gap-2' : 'gap-3';
+    // Dynamic sizing based on window width - everything scales proportionally
+    const iconSize = isUltraTiny ? 14 : isTiny ? 15 : isVeryCompact ? 16 : isCompact ? 17 : 18;
+    const colorSize = isUltraTiny ? 'w-2.5 h-2.5' : isTiny ? 'w-3 h-3' : isVeryCompact ? 'w-3 h-3' : 'w-3.5 h-3.5';
+    const buttonPadding = isUltraTiny ? 'p-1' : isTiny ? 'p-1.5' : 'p-1.5';
+    const sectionGap = isUltraTiny ? 'gap-1.5' : isTiny ? 'gap-2' : isVeryCompact ? 'gap-2.5' : 'gap-3';
+    const dividerHeight = 'h-4';
 
     return (
         <div className="h-screen w-screen flex flex-col overflow-hidden" style={{ backgroundColor: '#e9e6e4', color: '#161419' }}>
             {/* Window Drag Handle */}
             <div className="h-3 w-full shrink-0" style={{ backgroundColor: '#e9e6e4', WebkitAppRegion: 'drag' } as any} />
 
-            {/* Toolbar */}
-            <div className="h-auto min-h-14 border-b select-none shadow-sm overflow-visible" style={{ backgroundColor: '#e9e6e4', borderColor: '#94918f', WebkitAppRegion: 'drag' } as any}>
-                <div className={`flex flex-wrap items-center ${toolbarGap} px-4 py-2 w-full`}>
+            {/* Toolbar - Clean Apple-style, scrollable if needed */}
+            <div className="border-b select-none flex-shrink-0" style={{ backgroundColor: '#e9e6e4', borderColor: '#c4c1bf', WebkitAppRegion: 'drag' } as any}>
+                <div className={`flex items-center ${sectionGap} px-3 py-2 w-full overflow-x-auto`} style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
                     {/* Left Section - Tools & Properties */}
-                    <div className={`flex items-center flex-wrap ${toolbarGap} flex-1 min-w-0`} style={{ WebkitAppRegion: 'no-drag' } as any}>
-                        {/* Tools */}
-                        <div className={`flex items-center ${isTiny ? 'gap-0.5' : 'gap-1'} rounded-lg ${isTiny ? 'p-0.5' : 'p-1'} flex-shrink-0`} style={{ backgroundColor: '#d4d1cf' }}>
+                    <div className={`flex items-center ${sectionGap} flex-shrink-0`} style={{ WebkitAppRegion: 'no-drag' } as any}>
+                        {/* Drawing Tools */}
+                        <div className="flex items-center gap-0">
                             <ToolButton icon={<MousePointer2 size={iconSize} />} active={activeTool === 'select'} onClick={() => setActiveTool('select')} title="Select" padding={buttonPadding} />
                             <ToolButton icon={<Pen size={iconSize} />} active={activeTool === 'pen'} onClick={() => setActiveTool('pen')} title="Pen" padding={buttonPadding} />
                             <ToolButton icon={<Type size={iconSize} />} active={activeTool === 'text'} onClick={() => setActiveTool('text')} title="Text" padding={buttonPadding} />
                             <ToolButton icon={<Square size={iconSize} />} active={activeTool === 'rect'} onClick={() => setActiveTool('rect')} title="Rectangle" padding={buttonPadding} />
                             <ToolButton icon={<ArrowRight size={iconSize} />} active={activeTool === 'arrow'} onClick={() => setActiveTool('arrow')} title="Arrow" padding={buttonPadding} />
-                            {!isTiny && <div className="w-px h-6 mx-1" style={{ backgroundColor: '#94918f' }} />}
-                            <ToolButton icon={<Crop size={iconSize} />} active={activeTool === 'crop'} onClick={() => setActiveTool('crop')} title="Crop" padding={buttonPadding} />
                         </div>
 
+                        <div className={`w-px ${dividerHeight} flex-shrink-0`} style={{ backgroundColor: '#b0adab' }} />
+
+                        <ToolButton icon={<Crop size={iconSize} />} active={activeTool === 'crop'} onClick={() => setActiveTool('crop')} title="Crop" padding={buttonPadding} />
+
+                        <div className={`w-px ${dividerHeight} flex-shrink-0`} style={{ backgroundColor: '#b0adab' }} />
+
                         {/* History */}
-                        <div className={`flex items-center ${isTiny ? 'gap-0.5' : 'gap-1'} flex-shrink-0`}>
+                        <div className="flex items-center gap-0">
                             <IconButton icon={<Undo size={iconSize} />} onClick={handleUndo} disabled={historyStep <= 0} title="Undo" padding={buttonPadding} />
                             <IconButton icon={<Redo size={iconSize} />} onClick={handleRedo} disabled={historyStep >= history.length - 1} title="Redo" padding={buttonPadding} />
                         </div>
 
-                        {/* Color Palette - Always visible, scales down */}
-                        <div className={`flex items-center ${isTiny ? 'gap-1' : 'gap-2'} flex-shrink-0 ${!isTiny && !isVeryCompact ? 'px-3' : ''}`} style={{ borderLeft: !isTiny && !isVeryCompact ? '1px solid #94918f' : 'none' }}>
-                            <div className={`flex ${isTiny ? 'gap-0.5' : 'gap-1'}`}>
-                                {COLORS.map(c => (
-                                    <button
-                                        key={c}
-                                        onClick={() => updateSelectedProperty('color', c)}
-                                        className={`${colorSize} rounded-full flex-shrink-0 transition-all ${currentColor === c ? 'ring-2' : 'ring-1'}`}
-                                        style={{ background: c, ringColor: currentColor === c ? '#161419' : '#94918f' }}
-                                        title={c}
-                                    />
-                                ))}
-                            </div>
-                            {/* Size slider - hide only on tiny screens */}
-                            {!isTiny && !isVeryCompact && (
-                                <div className="flex items-center gap-2 ml-2 flex-shrink-0">
-                                    <span className="text-xs whitespace-nowrap" style={{ color: '#161419', fontFamily: 'Inter, sans-serif', opacity: 0.6 }}>Size</span>
+                        <div className={`w-px ${dividerHeight} flex-shrink-0`} style={{ backgroundColor: '#b0adab' }} />
+
+                        {/* Color Palette */}
+                        <div className="flex items-center gap-1">
+                            {COLORS.map(c => (
+                                <button
+                                    key={c}
+                                    onClick={() => updateSelectedProperty('color', c)}
+                                    className={`${colorSize} rounded-full flex-shrink-0 transition-all`}
+                                    style={{ 
+                                        background: c, 
+                                        boxShadow: currentColor === c 
+                                            ? `0 0 0 2px #e9e6e4, 0 0 0 3px #161419` 
+                                            : `0 0 0 1px ${c === '#ffffff' ? '#94918f' : 'transparent'}`,
+                                    }}
+                                    title={c}
+                                />
+                            ))}
+                        </div>
+
+                        {/* Size slider - hide on small screens */}
+                        {!isVeryCompact && (
+                            <>
+                                <div className={`w-px ${dividerHeight} flex-shrink-0`} style={{ backgroundColor: '#b0adab' }} />
+                                <div className="flex items-center gap-1.5 flex-shrink-0">
                                     <input
                                         type="range"
                                         min="1"
                                         max="20"
                                         value={currentSize}
                                         onChange={(e) => updateSelectedProperty('size', parseInt(e.target.value))}
-                                        className="w-20 h-1 rounded-lg appearance-none cursor-pointer"
+                                        className="w-12 h-1 rounded-lg appearance-none cursor-pointer"
                                         style={{ backgroundColor: '#94918f' }}
                                     />
-                                    <span className="text-xs w-4" style={{ color: '#161419', fontFamily: 'Inter, sans-serif', opacity: 0.6 }}>{currentSize}</span>
+                                    <span className="text-xs w-3" style={{ color: '#161419', fontFamily: 'Inter, sans-serif', opacity: 0.6 }}>{currentSize}</span>
                                 </div>
-                            )}
-                        </div>
+                            </>
+                        )}
                     </div>
 
+                    {/* Spacer */}
+                    <div className="flex-1 min-w-2" />
+
                     {/* Right Section - Actions */}
-                    <div className={`flex items-center ${toolbarGap} flex-shrink-0`} style={{ WebkitAppRegion: 'no-drag' } as any}>
+                    <div className={`flex items-center ${sectionGap} flex-shrink-0`} style={{ WebkitAppRegion: 'no-drag' } as any}>
                         {activeTool === 'crop' && (
-                            <button onClick={applyCrop} className={`flex items-center ${isTiny ? 'gap-0.5 px-2 py-1' : 'gap-1 px-3 py-1.5'} rounded ${isTiny ? 'text-xs' : 'text-sm'} font-medium whitespace-nowrap transition-colors`} style={{ backgroundColor: '#161419', color: '#e9e6e4', fontFamily: 'Space Grotesk, sans-serif' }}>
-                                <Check size={isTiny ? 12 : 14} /> {!isTiny && 'Apply'}
+                            <button onClick={applyCrop} className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium whitespace-nowrap transition-colors flex-shrink-0" style={{ backgroundColor: '#161419', color: '#e9e6e4', fontFamily: 'Space Grotesk, sans-serif' }}>
+                                <Check size={12} /> Apply
                             </button>
                         )}
 
-                        {/* Trash - Always visible, scales down */}
-                        <IconButton icon={<Trash2 size={iconSize} />} onClick={() => window.electronAPI.trash()} className="text-red-600" title="Delete File" padding={buttonPadding} hoverBg="#f5e5e5" />
+                        <IconButton icon={<Trash2 size={iconSize} />} onClick={() => window.electronAPI.trash()} className="text-red-600" title="Delete" padding={buttonPadding} hoverBg="#f5e5e5" />
                         
-                        {!isTiny && <div className="w-px h-6" style={{ backgroundColor: '#94918f' }} />}
+                        <div className={`w-px ${dividerHeight} flex-shrink-0`} style={{ backgroundColor: '#b0adab' }} />
                         
-                        <IconButton icon={<Copy size={iconSize} />} onClick={handleCopy} title="Copy" padding={buttonPadding} />
+                        <div className="flex items-center gap-0">
+                            <IconButton icon={<Copy size={iconSize} />} onClick={handleCopy} title="Copy" padding={buttonPadding} />
+                            {!isTiny && <IconButton icon={<Share2 size={iconSize} />} onClick={handleShare} title="Share" padding={buttonPadding} />}
+                        </div>
                         
-                        {/* Share - hide only on very small screens */}
-                        {!isVeryCompact && <IconButton icon={<Share2 size={iconSize} />} onClick={handleShare} title="Share" padding={buttonPadding} />}
-                        
-                        <button onClick={handleDone} className={`${isTiny ? 'px-2 py-1 text-xs' : 'px-4 py-1.5 text-sm'} rounded-md font-medium transition-colors shadow-sm whitespace-nowrap`} style={{ backgroundColor: '#161419', color: '#e9e6e4', fontFamily: 'Space Grotesk, sans-serif' }}>
+                        <button onClick={handleDone} className={`${isTiny ? 'px-2.5 py-1 text-xs' : 'px-3 py-1.5 text-sm'} rounded font-medium transition-colors whitespace-nowrap flex-shrink-0`} style={{ backgroundColor: '#161419', color: '#e9e6e4', fontFamily: 'Space Grotesk, sans-serif' }}>
                             Done
                         </button>
                     </div>
