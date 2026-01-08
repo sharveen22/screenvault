@@ -18,6 +18,13 @@ type ScreenshotPayload =
       bytes?: number[] | Uint8Array | ArrayBuffer;
     };
 
+type OCRPayload = {
+  screenshotId: string;
+  filePath: string;
+  fileName: string;
+  base64: string;
+};
+
 export function useElectronScreenshots() {
   const isElectron = typeof window !== 'undefined' && !!window.electronAPI;
 
@@ -70,7 +77,7 @@ export function useElectronScreenshots() {
   };
 
   // Background OCR processing (non-blocking)
-  const processOCRInBackground = async (file: File, screenshotId: string, originalName: string) => {
+  const processOCRInBackground = async (file: File, screenshotId: string, originalName: string, storagePath: string) => {
     try {
       const ocr = await extractTextFromImage(file);
       const ocrText = ocr?.text || '';
@@ -85,11 +92,27 @@ export function useElectronScreenshots() {
       const smartName = generateSmartFilename(ocrText, originalName);
       const tags = generateTags(ocrText);
 
-      // Update database with OCR results
+      // Rename the actual file on disk to match smart name
+      let newStoragePath = storagePath;
+      if (smartName !== originalName && storagePath && (window.electronAPI as any)?.renameFile) {
+        try {
+          const result = await (window.electronAPI as any).renameFile(storagePath, smartName);
+          if (result?.newPath) {
+            newStoragePath = result.newPath;
+            console.log(`[OCR] Renamed file: ${storagePath} -> ${newStoragePath}`);
+          }
+        } catch (renameErr) {
+          console.warn('[OCR] File rename failed, keeping original name:', renameErr);
+          // Keep using original storage path if rename fails
+        }
+      }
+
+      // Update database with OCR results and new path
       await db
         .from('screenshots')
         .update({
           file_name: smartName,
+          storage_path: newStoragePath,
           ocr_text: ocrText,
           ocr_confidence: ocrConf,
           custom_tags: tags,
@@ -185,7 +208,7 @@ export function useElectronScreenshots() {
         }, 50);
 
         // ---- OCR IN BACKGROUND (async, non-blocking) ----
-        processOCRInBackground(file, rowId, baseName);
+        processOCRInBackground(file, rowId, baseName, (data as any).filePath);
 
       } catch (error) {
         console.error('[Screenshot] Error processing:', error);
@@ -202,6 +225,90 @@ export function useElectronScreenshots() {
     []
   );
 
+  // Handle OCR processing triggered from main process
+  const handleOCRProcess = useCallback(async (data: OCRPayload) => {
+    console.log('[OCR] Received OCR request for:', data.screenshotId);
+    
+    // Dispatch event to show loading state
+    window.dispatchEvent(new CustomEvent('ocr-start', { 
+      detail: { screenshotId: data.screenshotId } 
+    }));
+    
+    try {
+      // Convert base64 to File
+      const binary = atob(data.base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      const blob = new Blob([bytes], { type: 'image/png' });
+      const file = new File([blob], data.fileName, { type: 'image/png' });
+
+      // Run OCR
+      const ocr = await extractTextFromImage(file);
+      const ocrText = ocr?.text || '';
+      const ocrConf = ocr?.confidence ?? null;
+
+      console.log(`[OCR] Extracted ${ocrText.length} chars from ${data.fileName}`);
+
+      if (!ocrText.trim()) {
+        console.log('[OCR] No text found, skipping update');
+        return;
+      }
+
+      // Generate smart filename and tags
+      const smartName = generateSmartFilename(ocrText, data.fileName);
+      const tags = generateTags(ocrText);
+
+      console.log(`[OCR] Smart name: ${smartName}, Tags: ${tags.join(', ')}`);
+
+      // Rename the actual file on disk to match smart name
+      let newStoragePath = data.filePath;
+      if (smartName !== data.fileName && data.filePath && (window.electronAPI as any)?.renameFile) {
+        try {
+          const result = await (window.electronAPI as any).renameFile(data.filePath, smartName);
+          if (result?.newPath) {
+            newStoragePath = result.newPath;
+            console.log(`[OCR] Renamed file: ${data.filePath} -> ${newStoragePath}`);
+          }
+        } catch (renameErr) {
+          console.warn('[OCR] File rename failed:', renameErr);
+        }
+      }
+
+      // Update database with OCR results
+      const { error } = await db
+        .from('screenshots')
+        .update({
+          file_name: smartName,
+          storage_path: newStoragePath,
+          ocr_text: ocrText,
+          ocr_confidence: ocrConf,
+          custom_tags: tags,
+        })
+        .eq('id', data.screenshotId)
+        .select();
+
+      if (error) {
+        console.error('[OCR] Database update failed:', error);
+      } else {
+        console.log(`[OCR] Completed for ${data.screenshotId}`);
+        
+        // Dispatch custom event to notify gallery to refresh
+        window.dispatchEvent(new CustomEvent('ocr-complete', { 
+          detail: { screenshotId: data.screenshotId, smartName, tags } 
+        }));
+        
+        // Also reload page to show updated data
+        setTimeout(() => {
+          window.location.reload();
+        }, 500);
+      }
+    } catch (e) {
+      console.error('[OCR] Processing failed:', e);
+    }
+  }, []);
+
   useEffect(() => {
     if (!isElectron) return;
     if (subscribedRef.current) return;
@@ -216,6 +323,15 @@ export function useElectronScreenshots() {
       console.error('Failed to subscribe to screenshot events:', e);
     }
 
+    // Subscribe to OCR processing events
+    let offOCR: (() => void) | undefined;
+    try {
+      offOCR = (window.electronAPI as any)?.onOCRProcess?.(handleOCRProcess) as (() => void) | undefined;
+      console.log('[OCR] Subscribed to OCR events');
+    } catch (e) {
+      console.error('Failed to subscribe to OCR events:', e);
+    }
+
     const offLog = (window.electronAPI as any)?.onLog?.((_p: any) => {
       // Optional: display logs
     });
@@ -224,13 +340,14 @@ export function useElectronScreenshots() {
       try {
         if (off) off();
         else (window.electronAPI as any)?.offScreenshotCaptured?.(handler);
+        if (offOCR) offOCR();
         offLog && offLog();
       } catch (e) {
         console.warn('Cleanup screenshot listener failed:', e);
       }
       subscribedRef.current = false;
     };
-  }, [isElectron, handleScreenshot]);
+  }, [isElectron, handleScreenshot, handleOCRProcess]);
 
   const takeScreenshot = useCallback(async () => {
     if (!isElectron || !window.electronAPI?.takeScreenshot) return;

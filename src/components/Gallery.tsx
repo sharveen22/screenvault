@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { db, Screenshot } from '../lib/database';
-import { Star, FolderOpen, Trash2, Image as ImageIcon } from 'lucide-react';
+import { Star, FolderOpen, Trash2, Image as ImageIcon, Loader2 } from 'lucide-react';
 import { ScreenshotModal } from './ScreenshotModal';
 
 interface GalleryProps {
@@ -10,9 +10,10 @@ interface GalleryProps {
   captureStatus?: 'capturing' | 'processing-ocr' | 'saving' | null;
   sortOrder?: 'newest' | 'oldest';
   onSortChange?: (order: 'newest' | 'oldest') => void;
+  processingOCR?: Set<string>; // IDs of screenshots currently processing OCR
 }
 
-export function Gallery({ searchQuery, activeView, onDropSuccess, captureStatus, sortOrder = 'newest', onSortChange }: GalleryProps) {
+export function Gallery({ searchQuery, activeView, onDropSuccess, captureStatus, sortOrder = 'newest', onSortChange, processingOCR = new Set() }: GalleryProps) {
   const [screenshots, setScreenshots] = useState<Screenshot[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedScreenshot, setSelectedScreenshot] = useState<Screenshot | null>(null);
@@ -331,6 +332,7 @@ export function Gallery({ searchQuery, activeView, onDropSuccess, captureStatus,
             getImageUrl={getImageUrl}
             formatDate={formatDate}
             onDragStart={handleDragStart}
+            isProcessingOCR={processingOCR.has(screenshot.id)}
           />
         ))}
       </div>
@@ -354,6 +356,7 @@ function ScreenshotCard({
   getImageUrl,
   formatDate,
   onDragStart,
+  isProcessingOCR,
 }: {
   screenshot: Screenshot;
   onSelect: (screenshot: Screenshot) => void;
@@ -362,10 +365,22 @@ function ScreenshotCard({
   getImageUrl: (path: string) => Promise<string>;
   formatDate: (date: string) => string;
   onDragStart: (e: React.DragEvent, screenshot: Screenshot) => void;
+  isProcessingOCR?: boolean;
 }) {
   const [imageUrl, setImageUrl] = useState<string>('');
   const [isVisible, setIsVisible] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
+
+  // Check if this screenshot is likely still processing OCR
+  // (created recently and has no OCR text yet)
+  const isRecentlyCreated = () => {
+    const createdAt = new Date(screenshot.created_at).getTime();
+    const now = Date.now();
+    const ageSeconds = (now - createdAt) / 1000;
+    return ageSeconds < 60; // Within last 60 seconds
+  };
+  
+  const isLikelyProcessing = isProcessingOCR || (isRecentlyCreated() && !screenshot.ocr_text);
 
   // Intersection Observer for lazy loading
   useEffect(() => {
@@ -452,9 +467,16 @@ function ScreenshotCard({
         </button>
       </div>
 
-      {screenshot.is_favorite && (
+      {screenshot.is_favorite && !isLikelyProcessing && (
         <div className="absolute top-2 left-2">
           <Star className="w-4 h-4 fill-[#161419] text-[#161419]" />
+        </div>
+      )}
+
+      {isLikelyProcessing && (
+        <div className="absolute top-2 left-2 flex items-center gap-1.5 bg-[#161419] text-[#e9e6e4] px-2 py-1 text-xs">
+          <Loader2 className="w-3 h-3 animate-spin" />
+          <span>Processing...</span>
         </div>
       )}
 
