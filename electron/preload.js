@@ -91,4 +91,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     reveal: (filePath) => ipcRenderer.invoke('file:reveal', filePath),
     share: (filePath) => ipcRenderer.invoke('file:share', filePath),
   },
+  renameFile: (oldPath, newName) => ipcRenderer.invoke('file:rename', { oldPath, newName }),
+  
+  // OCR processing listener
+  onOCRProcess: (callback) => {
+    const handler = (_evt, data) => callback(data);
+    ipcRenderer.on('ocr:process', handler);
+    return () => ipcRenderer.removeListener('ocr:process', handler);
+  },
 });

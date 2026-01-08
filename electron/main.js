@@ -449,13 +449,8 @@ function createThumbnailPreview(filePath) {
             sendLog('Sending screenshot-saved event to main window');
             mainWindow.webContents.send('screenshot-saved', { id: savedId });
             
-            // Also reload the page to ensure gallery refreshes
-            setTimeout(() => {
-              if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
-                mainWindow.webContents.reload();
-                sendLog('Reloaded main window to refresh gallery');
-              }
-            }, 100);
+            // DON'T reload immediately - let OCR complete first
+            // The renderer will refresh after OCR is done
           }
         }
       }, 6000);
@@ -537,10 +532,45 @@ function saveScreenshotToDatabase(filePath) {
     );
     
     sendLog(`Screenshot saved to database: ${id} - ${fileName}`);
+    
+    // Trigger OCR processing in renderer
+    triggerOCRProcessing(id, filePath);
+    
     return id;
   } catch (e) {
     sendLog(`saveScreenshotToDatabase error: ${e}`, 'error');
     return null;
+  }
+}
+
+// Trigger OCR processing in renderer process
+function triggerOCRProcessing(screenshotId, filePath) {
+  try {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      sendLog('triggerOCRProcessing: mainWindow not available', 'error');
+      return;
+    }
+    
+    if (!mainWindow.webContents) {
+      sendLog('triggerOCRProcessing: webContents not available', 'error');
+      return;
+    }
+    
+    const buffer = fs.readFileSync(filePath);
+    const base64 = Buffer.from(buffer).toString('base64');
+    
+    sendLog(`Sending ocr:process event for ${screenshotId}, file: ${filePath}`);
+    
+    mainWindow.webContents.send('ocr:process', {
+      screenshotId,
+      filePath,
+      fileName: path.basename(filePath),
+      base64
+    });
+    
+    sendLog(`Triggered OCR processing for ${screenshotId}`);
+  } catch (e) {
+    sendLog(`triggerOCRProcessing error: ${e}`, 'error');
   }
 }
 
@@ -684,14 +714,9 @@ ipcMain.on('popup:save', (_event, dataUrl) => {
         popupWindow.close();
       }
       
-      // Refresh main window to show new screenshot
+      // Notify main window - DON'T reload, let OCR complete first
       if (savedId && mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
         mainWindow.webContents.send('screenshot-saved', { id: savedId });
-        setTimeout(() => {
-          if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
-            mainWindow.webContents.reload();
-          }
-        }, 100);
       }
     } catch (e) {
       sendLog(`Save error: ${e}`, 'error');
@@ -1296,6 +1321,42 @@ ipcMain.handle('file:share', async (_e, filePath) => {
 ipcMain.handle('file:delete', async (_e, filePath) => new Promise((resolve, reject) => {
   fs.unlink(filePath, (err) => err ? reject(err) : resolve(true));
 }));
+
+ipcMain.handle('file:rename', async (_e, { oldPath, newName }) => {
+  try {
+    if (!oldPath || !newName) {
+      return { newPath: null, error: 'Missing oldPath or newName' };
+    }
+    
+    // Get directory from old path
+    const dir = path.dirname(oldPath);
+    const newPath = path.join(dir, newName);
+    
+    // Check if old file exists
+    if (!fs.existsSync(oldPath)) {
+      return { newPath: null, error: 'Original file not found' };
+    }
+    
+    // Check if new path already exists (avoid overwriting)
+    if (fs.existsSync(newPath) && oldPath !== newPath) {
+      // Add timestamp suffix to make unique
+      const ext = path.extname(newName);
+      const base = path.basename(newName, ext);
+      const uniqueName = `${base}_${Date.now()}${ext}`;
+      const uniquePath = path.join(dir, uniqueName);
+      fs.renameSync(oldPath, uniquePath);
+      sendLog(`Renamed file: ${oldPath} -> ${uniquePath}`);
+      return { newPath: uniquePath, error: null };
+    }
+    
+    fs.renameSync(oldPath, newPath);
+    sendLog(`Renamed file: ${oldPath} -> ${newPath}`);
+    return { newPath, error: null };
+  } catch (error) {
+    sendLog(`file:rename error: ${error}`, 'error');
+    return { newPath: null, error: error.message };
+  }
+});
 
 // (opsional) buka Settings dari renderer
 ipcMain.handle('perm:open-mac-screen-settings', async () => {
