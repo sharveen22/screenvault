@@ -1173,7 +1173,7 @@ ipcMain.handle('notify', (_evt, payload = {}) => {
   n.show();
   return true;
 });
-ipcMain.handle('db:query', async (_e, { table, operation, data, where }) => {
+ipcMain.handle('db:query', async (_e, { table, operation, data, where, orderBy, limit }) => {
   try {
     const db = getDatabase();
 
@@ -1185,6 +1185,17 @@ ipcMain.handle('db:query', async (_e, { table, operation, data, where }) => {
         query += ` WHERE ${cond.join(' AND ')}`;
         params.push(...Object.values(where));
       }
+      // Add ORDER BY clause
+      if (orderBy && orderBy.column) {
+        const direction = (orderBy.direction || 'desc').toUpperCase();
+        const safeDirection = direction === 'ASC' ? 'ASC' : 'DESC';
+        query += ` ORDER BY ${orderBy.column} ${safeDirection}`;
+      }
+      // Add LIMIT clause
+      if (limit && typeof limit === 'number' && limit > 0) {
+        query += ` LIMIT ${Math.floor(limit)}`;
+      }
+      console.log('[db:query] Executing:', query, params);
       const rows = db.prepare(query).all(...params);
       return {
         data: rows.map(row => ({
