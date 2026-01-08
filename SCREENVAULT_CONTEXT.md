@@ -11,7 +11,9 @@
 - **Auto-Clipboard:** Screenshots automatically copied to clipboard for immediate pasting
 - **Editor Window:** Click thumbnail to open annotation editor
 - **OCR Processing:** Automatic text extraction using Tesseract.js (runs in background)
+- **Smart Filenames:** OCR-generated filenames sync to local folder
 - **Smart Organization:** Folders, favorites, tags, and search
+- **Sort Screenshots:** Sort by newest/oldest with dropdown
 - **Advanced Editor:** Annotate screenshots with pen, text, shapes, arrows, crop
 - **Local Storage:** SQLite database + file system (~/Pictures/ScreenVault/)
 - **System Integration:** Menu bar icon, global shortcuts, notifications
@@ -20,19 +22,30 @@
 
 ## 🎯 LATEST FEATURES (January 8, 2026)
 
-### 1. Apple-Style Thumbnail Preview
+### 1. Smart Filenames + OCR Fix (NEW - PR #30)
+- **Fixed OCR:** Was completely broken (IPC event never triggered)
+- **Smart Filenames Sync:** Local files renamed to match OCR-generated names
+- **Processing Indicator:** "Processing..." badge on cards during OCR
+- **File Rename IPC:** New `file:rename` handler renames files on disk
+- **Storage Path Update:** Database `storage_path` updated when file renamed
+
+### 2. Sort Screenshots (PR #29)
+- **Sort Dropdown:** Choose "Newest First" or "Oldest First"
+- **Location:** Below title, above search bar in Dashboard
+- **Reload Button:** Manual gallery refresh
+- **Database-level sorting:** Uses ORDER BY for performance
+
+### 3. Apple-Style Thumbnail Preview
 - **Location:** Bottom-LEFT corner (180x120px)
 - **Design:** Beige background (#e9e6e4), subtle border, progress bar
 - **Auto-Clipboard:** Screenshot immediately copied to clipboard
 - **6-Second Timer:** Progress bar shows countdown, then auto-saves
 - **Click to Edit:** Opens editor popup (save on "Done", discard on close)
 
-### 2. Responsive Editor Toolbar
+### 4. Responsive Editor Toolbar
 - **Apple-style design:** Clean, no grey backgrounds, subtle dividers
 - **Dynamic scaling:** Icons/spacing scale based on window width
 - **4 breakpoints:** Ultra-tiny (<450px), Tiny (<550px), Very compact (<700px), Compact (<900px)
-- **Horizontal scroll:** Fallback for very small windows
-- **Smart hiding:** Size slider hides on small screens, share button on tiny
 
 ---
 
@@ -42,7 +55,7 @@
 - **Framework:** React 18 + TypeScript + Vite
 - **Styling:** Tailwind CSS + custom CSS (monochrome beige/cream design)
 - **Icons:** Lucide React
-- **Fonts:** Space Grotesk (titles), Inter (body), Playfair Display (italics)
+- **Fonts:** Space Grotesk (titles), Inter (body)
 
 ### Backend
 - **Platform:** Electron 38 (Node.js)
@@ -54,20 +67,20 @@
 ```
 screenvault/
 ├── electron/
-│   ├── main.js           # Main process (thumbnail, editor, IPC, database save)
-│   ├── preload.js        # IPC bridge
+│   ├── main.js           # Main process (thumbnail, editor, IPC, database save, OCR trigger)
+│   ├── preload.js        # IPC bridge (includes onOCRProcess, renameFile)
 │   └── database.js       # SQLite operations
 ├── src/
 │   ├── components/
-│   │   ├── Dashboard.tsx # Main UI with sidebar + gallery
-│   │   ├── Gallery.tsx   # Screenshot grid view (lazy loading)
+│   │   ├── Dashboard.tsx # Main UI with sidebar + gallery + sort controls
+│   │   ├── Gallery.tsx   # Screenshot grid view (lazy loading, sorting, OCR indicator)
 │   │   ├── Editor.tsx    # Annotation editor (responsive toolbar)
 │   │   └── ScreenshotModal.tsx # Detail view
 │   ├── hooks/
-│   │   └── useElectronScreenshots.ts # Screenshot capture hook
+│   │   └── useElectronScreenshots.ts # Screenshot capture + OCR processing hook
 │   ├── lib/
 │   │   ├── database.ts   # Database client
-│   │   └── ocr.ts        # OCR utilities
+│   │   └── ocr.ts        # OCR utilities (extractTextFromImage, generateSmartFilename, generateTags)
 │   └── contexts/
 │       └── AuthContext.tsx # Auth system (DO NOT REMOVE)
 ├── db/
@@ -75,6 +88,26 @@ screenvault/
 └── public/
     └── icon.icns         # App icon
 ```
+
+---
+
+## 🔄 OCR Flow (IMPORTANT)
+
+The OCR flow was fixed in PR #30. Here's how it works:
+
+1. **Screenshot captured** → saved to disk as `screenshot_YYYY-MM-DD_HH-MM-SS.png`
+2. **Database entry created** → `saveScreenshotToDatabase()` in main.js
+3. **OCR triggered** → `triggerOCRProcessing()` sends `ocr:process` IPC event
+4. **Renderer receives event** → `handleOCRProcess()` in useElectronScreenshots.ts
+5. **Tesseract runs** → extracts text from image
+6. **Smart filename generated** → from OCR text (e.g., `code_function_import_2026-01-08.png`)
+7. **File renamed on disk** → via `file:rename` IPC handler
+8. **Database updated** → `file_name`, `storage_path`, `ocr_text`, `custom_tags`
+9. **Page reloads** → shows updated data
+
+### Key IPC Channels
+- `ocr:process` - Main → Renderer: Trigger OCR processing
+- `file:rename` - Renderer → Main: Rename file on disk
 
 ---
 
@@ -106,27 +139,26 @@ open release/mac/ScreenVault.app
 
 ### Create New Branch & PR
 ```bash
-# 1. Check current status
-git status
-
-# 2. Create new branch
+# 1. Create new branch
 git checkout -b feature/your-feature-name
 
-# 3. Stage changes
-git add path/to/file.tsx
-# Or stage all changes:
-git add -A
+# 2. Stage changes (specific files or all)
+git add electron/main.js electron/preload.js src/components/Gallery.tsx
+# OR stage all: git add -A
 
-# 4. Commit with descriptive message
+# 3. Commit with descriptive message
 git commit -m "feat: Description of your changes
 
 - Detail 1
 - Detail 2"
 
-# 5. Push branch to GitHub
+# 4. Push branch to GitHub
 git push -u origin feature/your-feature-name
 
-# 6. Create PR using GitHub CLI
+# 5. Create PR (option A: use URL from push output)
+# Visit: https://github.com/sharveen22/screenvault/pull/new/feature/your-feature-name
+
+# 5. Create PR (option B: use GitHub CLI)
 gh pr create --title "feat: Your PR Title" --body "## Summary
 Description of changes
 
@@ -137,56 +169,12 @@ Description of changes
 
 ### Useful Git Commands
 ```bash
-# Check current branch
-git branch
-
-# Switch to main
-git checkout main
-
-# Pull latest changes
-git pull origin main
-
-# View commit history
-git log --oneline -10
+git status              # Check current status
+git branch              # List branches
+git checkout main       # Switch to main
+git pull origin main    # Pull latest changes
+git diff --stat         # See changed files
 ```
-
----
-
-## 📍 Database Locations
-
-- **Dev:** `./db/screenvault-dev.db`
-- **Production:** `~/Library/Application Support/screenvault/data/screenvault.db`
-
-### Check Database Contents
-```bash
-sqlite3 ~/Library/Application\ Support/screenvault/data/screenvault.db "SELECT id, file_name, created_at FROM screenshots ORDER BY created_at DESC LIMIT 5;"
-```
-
----
-
-## ✅ COMPLETED FEATURES
-
-### Session 3: Editor Toolbar Improvements (January 8, 2026)
-- ✅ Responsive toolbar with dynamic icon scaling
-- ✅ Apple-style clean design (no grey backgrounds)
-- ✅ ResizeObserver for reliable resize detection
-- ✅ Horizontal scroll fallback for small windows
-
-### Session 2: Apple-Style Thumbnail Preview (January 7-8, 2026)
-- ✅ Thumbnail preview in bottom-left corner
-- ✅ Auto-clipboard copy on screenshot
-- ✅ 6-second auto-save with progress bar
-- ✅ Click thumbnail → Opens editor
-- ✅ Editor "Done" saves, close discards
-- ✅ Beige brand colors on thumbnail
-
-### Session 1: Performance Optimizations (January 6, 2026)
-- ✅ Async OCR Processing (70-80% faster capture)
-- ✅ Lazy Loading Images (60-70% faster gallery)
-- ✅ Debounced Search (90% fewer queries)
-- ✅ Optimized Database Queries
-- ✅ Optimized Editor Canvas (60fps)
-- ✅ 11 total optimizations
 
 ---
 
@@ -194,17 +182,49 @@ sqlite3 ~/Library/Application\ Support/screenvault/data/screenvault.db "SELECT i
 
 ### DO NOT REMOVE
 1. **Auth System (AuthContext.tsx)** - Hidden dependency breaks screenshot saving
-2. **useElectronScreenshots() hook call** - Needed for screenshot listener
+2. **useElectronScreenshots() hook call in Dashboard.tsx** - Needed for OCR listener
 3. **currentUser variable in main.js** - Used by auth handlers
+
+### File Editing Issue
+When using AI assistants, file edits may not persist. Use bash to write directly:
+```bash
+cat > src/components/YourFile.tsx << 'ENDFILE'
+// Your file content here
+ENDFILE
+
+# Verify the change
+grep "unique string" src/components/YourFile.tsx
+```
 
 ### Known Issues
 - Type errors in Dashboard.tsx for `folder` property (pre-existing, don't affect build)
 
-### Safe to Modify
-- Thumbnail styling (in main.js HTML template)
-- Editor UI (Editor.tsx)
-- Gallery layout (Gallery.tsx)
-- Database queries
+---
+
+## ✅ COMPLETED FEATURES
+
+### Session 5: Smart Filenames + OCR Fix (January 8, 2026) - PR #30
+- ✅ Fixed OCR (was completely broken)
+- ✅ Smart filenames sync to local folder
+- ✅ "Processing..." indicator during OCR
+- ✅ File rename IPC handler
+- ✅ Storage path updates in database
+
+### Session 4: Sort Screenshots - PR #29
+- ✅ Sort dropdown (Newest First / Oldest First)
+- ✅ Reload button for manual refresh
+
+### Session 3: Editor Toolbar Improvements - PR #28
+- ✅ Responsive toolbar with dynamic icon scaling
+- ✅ Apple-style clean design
+
+### Session 2: Apple-Style Thumbnail Preview - PR #27
+- ✅ Thumbnail preview in bottom-left corner
+- ✅ Auto-clipboard copy on screenshot
+- ✅ 6-second auto-save with progress bar
+
+### Session 1: Performance Optimizations
+- ✅ 11 total optimizations (async OCR, lazy loading, debounced search)
 
 ---
 
@@ -212,15 +232,12 @@ sqlite3 ~/Library/Application\ Support/screenvault/data/screenvault.db "SELECT i
 
 ### Colors
 - Background: `#e9e6e4` (beige/cream)
-- Secondary: `#dcd9d7` (lighter beige)
 - Text: `#161419` (dark charcoal)
 - Border: `#94918f` (medium gray)
-- Dividers: `#b0adab` (light gray)
 
 ### Typography
-- Titles: Space Grotesk (bold, tight letter-spacing)
-- Body: Inter (clean, readable)
-- Italics: Playfair Display (elegant)
+- Titles: Space Grotesk (bold)
+- Body: Inter (clean)
 
 ---
 
@@ -235,6 +252,9 @@ I'm continuing work on ScreenVault, an Electron-based macOS screenshot managemen
 - ✅ Auto-save after 6 seconds with progress bar
 - ✅ Editor popup on thumbnail click (save on "Done", discard on close)
 - ✅ Responsive editor toolbar (Apple-style, scales with window)
+- ✅ Sort screenshots (Newest/Oldest dropdown + Reload button)
+- ✅ OCR working with smart filenames synced to local folder
+- ✅ "Processing..." indicator during OCR
 - ✅ 11 performance optimizations complete
 - ❌ Auth system removal skipped (breaks screenshot saving - DO NOT ATTEMPT)
 
@@ -243,70 +263,44 @@ I'm continuing work on ScreenVault, an Electron-based macOS screenshot managemen
 2. Thumbnail appears in bottom-left (6 second timer with progress bar)
 3. Click thumbnail → Opens editor (save on "Done", discard on close)
 4. Don't click → Auto-saves after 6 seconds
+5. OCR runs in background → generates smart filename + tags
+6. Local file renamed to match smart filename
 
 **Key Files:**
-- `electron/main.js` - Thumbnail preview, editor popup, database save
-- `electron/preload.js` - IPC bridge
+- `electron/main.js` - Thumbnail preview, editor popup, database save, OCR trigger, file rename
+- `electron/preload.js` - IPC bridge (onOCRProcess, renameFile)
+- `src/hooks/useElectronScreenshots.ts` - OCR processing, file rename, event handling
 - `src/components/Editor.tsx` - Annotation editor (responsive toolbar)
-- `src/components/Dashboard.tsx` - Gallery with refresh
-- `src/components/Gallery.tsx` - Lazy loading screenshots
+- `src/components/Dashboard.tsx` - Gallery with sort controls and refresh
+- `src/components/Gallery.tsx` - Lazy loading screenshots with sorting + OCR indicator
 
 **Build & Test Command:**
 ```bash
 pkill -f "ScreenVault" 2>/dev/null; sleep 1; npm run build && npx electron-builder --mac --x64 --dir -c.mac.identity=null 2>&1 | tail -5 && open release/mac/ScreenVault.app
 ```
 
-**Create PR Command:**
+**Create PR Commands:**
 ```bash
 git checkout -b feature/your-feature-name
 git add -A
 git commit -m "feat: Description"
 git push -u origin feature/your-feature-name
-gh pr create --title "feat: Title" --body "Description" --base main
+# Then visit: https://github.com/sharveen22/screenvault/pull/new/feature/your-feature-name
 ```
 
 **IMPORTANT WARNINGS:**
 1. DO NOT remove auth system (AuthContext.tsx) - breaks screenshot saving
-2. DO NOT remove useElectronScreenshots() hook call - needed for listener
-3. Always test after each change - make ONE change at a time
-4. Use `-c.mac.identity=null` flag to skip code signing (faster builds)
+2. DO NOT remove useElectronScreenshots() hook call - needed for OCR listener
+3. If file edits don't persist, use bash `cat > file.tsx << 'EOF'` to write directly
+4. Always verify changes with `grep "YourCode" file.tsx` before building
+5. Use `-c.mac.identity=null` flag to skip code signing (faster builds)
 
-**Please read full context from SCREENVAULT_CONTEXT.md in the workspace.**
+Please read full context from SCREENVAULT_CONTEXT.md in the workspace.
 ```
 
 ---
 
 **Last Updated:** January 8, 2026  
-**Latest PRs:** 
-- PR #27: Apple-style thumbnail preview
-- PR #28: Responsive editor toolbar
+**Latest PRs:** PR #27, #28, #29, #30
+**Current Branch:** feature/smart-filenames-ocr
 **Status:** All features working, production-ready
-
----
-
-## 🔧 DEVELOPMENT WORKAROUND
-
-### File Editing Issue
-When using AI assistants (like Kiro/Claude), file edits via `strReplace` or `fsWrite` tools may not persist to disk properly due to sync issues. The file appears changed in the tool's view but the actual file on disk remains unchanged.
-
-**Solution:** Use bash `cat` command to write files directly:
-
-```bash
-# Write entire file content
-cat > src/components/YourFile.tsx << 'ENDFILE'
-// Your file content here
-ENDFILE
-
-# Verify the change was saved
-grep "unique string" src/components/YourFile.tsx
-```
-
-**Signs of this issue:**
-- Build hash doesn't change after edits
-- `grep` on the file doesn't find your new code
-- App doesn't reflect your changes after rebuild
-
-**Always verify changes with:**
-```bash
-grep "YourNewCode" src/components/YourFile.tsx
-```

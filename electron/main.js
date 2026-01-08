@@ -1088,6 +1088,7 @@ app.whenReady().then(async () => {
   createWindow();
   createTray();
   registerGlobalShortcuts();
+  startFolderWatcher();
 
   if (process.platform === 'darwin') {
     try {
@@ -1122,7 +1123,11 @@ app.on('before-quit', () => {
 });
 
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
-app.on('will-quit', () => { globalShortcut.unregisterAll(); closeDatabase(); });
+app.on('will-quit', () => { 
+  globalShortcut.unregisterAll(); 
+  if (folderWatcher) folderWatcher.close();
+  closeDatabase(); 
+});
 
 /* ====================== IPC ====================== */
 ipcMain.handle('take-screenshot', async () => { await takeScreenshotSystem(); });
@@ -1449,6 +1454,412 @@ ipcMain.handle('db:get-path', async () => {
     const { getDatabaseInfo } = require('./database');
     const info = getDatabaseInfo();
     return { data: info.path, error: null };
+  } catch (error) {
+    return { data: null, error: error.message };
+  }
+});
+
+/* ====================== Import Screenshots/Folders ====================== */
+const chokidar = require('chokidar');
+let folderWatcher = null;
+
+// Import single or multiple files
+ipcMain.handle('import:files', async () => {
+  try {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Import Screenshots',
+      properties: ['openFile', 'multiSelections'],
+      filters: [
+        { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'] }
+      ]
+    });
+
+    if (result.canceled || !result.filePaths.length) {
+      return { data: [], error: null };
+    }
+
+    const imported = [];
+    for (const filePath of result.filePaths) {
+      const id = await importSingleFile(filePath, null);
+      if (id) imported.push(id);
+    }
+
+    sendLog(`Imported ${imported.length} files`);
+    return { data: imported, error: null };
+  } catch (error) {
+    sendLog(`import:files error: ${error}`, 'error');
+    return { data: null, error: error.message };
+  }
+});
+
+// Import a folder (creates folder in app + imports all images into subfolder)
+ipcMain.handle('import:folder', async () => {
+  try {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Import Folder',
+      properties: ['openDirectory']
+    });
+
+    if (result.canceled || !result.filePaths.length) {
+      return { data: null, error: null };
+    }
+
+    const sourceFolderPath = result.filePaths[0];
+    const folderName = path.basename(sourceFolderPath);
+    
+    // Create folder in database
+    const db = getDatabase();
+    const folderId = crypto.randomUUID();
+    db.prepare('INSERT INTO folders (id, name) VALUES (?, ?)').run(folderId, folderName);
+    
+    // Create physical subfolder in ScreenVault directory
+    const destFolderPath = path.join(screenshotsDir(), folderName);
+    if (!fs.existsSync(destFolderPath)) {
+      fs.mkdirSync(destFolderPath, { recursive: true });
+    }
+    
+    // Import all images from folder into the subfolder
+    const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'];
+    const files = fs.readdirSync(sourceFolderPath);
+    const imported = [];
+    
+    for (const file of files) {
+      const ext = path.extname(file).toLowerCase();
+      if (imageExtensions.includes(ext)) {
+        const sourceFilePath = path.join(sourceFolderPath, file);
+        const stat = fs.statSync(sourceFilePath);
+        if (stat.isFile()) {
+          const id = await importSingleFileToFolder(sourceFilePath, folderId, destFolderPath);
+          if (id) imported.push(id);
+        }
+      }
+    }
+
+    sendLog(`Imported folder "${folderName}" with ${imported.length} images into ${destFolderPath}`);
+    mainWindow?.webContents.send('folder-created', { folderId, folderName });
+    return { data: { folderId, folderName, imported }, error: null };
+  } catch (error) {
+    sendLog(`import:folder error: ${error}`, 'error');
+    return { data: null, error: error.message };
+  }
+});
+
+// Import a single file into a specific folder
+async function importSingleFileToFolder(sourcePath, folderId, destFolderPath) {
+  try {
+    const db = getDatabase();
+    const fileName = path.basename(sourcePath);
+    const destPath = path.join(destFolderPath, fileName);
+    
+    // Copy file to destination folder
+    let finalPath = destPath;
+    if (fs.existsSync(destPath)) {
+      const ext = path.extname(fileName);
+      const base = path.basename(fileName, ext);
+      finalPath = path.join(destFolderPath, `${base}_${Date.now()}${ext}`);
+    }
+    fs.copyFileSync(sourcePath, finalPath);
+    
+    const stats = fs.statSync(finalPath);
+    const id = crypto.randomUUID();
+    const finalFileName = path.basename(finalPath);
+    
+    // Get image dimensions
+    const img = nativeImage.createFromPath(finalPath);
+    const size = img.getSize();
+    
+    const stmt = db.prepare(`
+      INSERT INTO screenshots (
+        id, file_name, file_size, file_type, width, height, 
+        storage_path, source, ocr_text, ocr_confidence, 
+        custom_tags, ai_tags, user_notes, is_favorite, is_archived,
+        thumbnail_path, ai_description, folder_id, view_count
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    
+    const ext = path.extname(finalFileName).toLowerCase();
+    const mimeTypes = {
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif',
+      '.webp': 'image/webp',
+      '.bmp': 'image/bmp'
+    };
+    
+    stmt.run(
+      id,
+      finalFileName,
+      stats.size,
+      mimeTypes[ext] || 'image/png',
+      size.width || 0,
+      size.height || 0,
+      finalPath,
+      'import',
+      '',
+      null,
+      '[]',
+      '[]',
+      '',
+      0,
+      0,
+      null,
+      null,
+      folderId,
+      0
+    );
+    
+    sendLog(`Imported file ${finalFileName} to folder ${path.basename(destFolderPath)}`);
+    
+    // Trigger OCR processing
+    triggerOCRProcessing(id, finalPath);
+    
+    return id;
+  } catch (error) {
+    sendLog(`importSingleFileToFolder error: ${error}`, 'error');
+    return null;
+  }
+}
+
+// Import a single file into the database (copy to ScreenVault folder)
+async function importSingleFile(sourcePath, folderId = null) {
+  try {
+    const db = getDatabase();
+    const fileName = path.basename(sourcePath);
+    const destPath = path.join(screenshotsDir(), fileName);
+    
+    // Copy file to ScreenVault folder (if not already there)
+    if (sourcePath !== destPath && !sourcePath.startsWith(screenshotsDir())) {
+      // Check if file with same name exists, add timestamp if so
+      let finalPath = destPath;
+      if (fs.existsSync(destPath)) {
+        const ext = path.extname(fileName);
+        const base = path.basename(fileName, ext);
+        finalPath = path.join(screenshotsDir(), `${base}_${Date.now()}${ext}`);
+      }
+      fs.copyFileSync(sourcePath, finalPath);
+      sourcePath = finalPath;
+    }
+    
+    const stats = fs.statSync(sourcePath);
+    const id = crypto.randomUUID();
+    const finalFileName = path.basename(sourcePath);
+    
+    // Get image dimensions
+    const img = nativeImage.createFromPath(sourcePath);
+    const size = img.getSize();
+    
+    const stmt = db.prepare(`
+      INSERT INTO screenshots (
+        id, file_name, file_size, file_type, width, height, 
+        storage_path, source, ocr_text, ocr_confidence, 
+        custom_tags, ai_tags, user_notes, is_favorite, is_archived,
+        thumbnail_path, ai_description, folder_id, view_count
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    
+    const ext = path.extname(finalFileName).toLowerCase();
+    const mimeTypes = {
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif',
+      '.webp': 'image/webp',
+      '.bmp': 'image/bmp'
+    };
+    
+    stmt.run(
+      id,
+      finalFileName,
+      stats.size,
+      mimeTypes[ext] || 'image/png',
+      size.width || 0,
+      size.height || 0,
+      sourcePath,
+      'import',
+      '',
+      null,
+      '[]',
+      '[]',
+      '',
+      0,
+      0,
+      null,
+      null,
+      folderId,
+      0
+    );
+    
+    sendLog(`Imported file: ${finalFileName} (id: ${id})`);
+    
+    // Trigger OCR processing
+    triggerOCRProcessing(id, sourcePath);
+    
+    return id;
+  } catch (e) {
+    sendLog(`importSingleFile error: ${e}`, 'error');
+    return null;
+  }
+}
+
+// Watch ScreenVault folder for new files/folders
+function startFolderWatcher() {
+  const watchDir = screenshotsDir();
+  sendLog(`Starting folder watcher on: ${watchDir}`);
+  
+  if (folderWatcher) {
+    folderWatcher.close();
+  }
+  
+  folderWatcher = chokidar.watch(watchDir, {
+    ignored: /(^|[\/\\])\../, // ignore dotfiles
+    persistent: true,
+    ignoreInitial: true,
+    depth: 1, // Watch one level deep for subfolders
+    awaitWriteFinish: {
+      stabilityThreshold: 1000,
+      pollInterval: 100
+    }
+  });
+  
+  const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'];
+  
+  folderWatcher.on('add', async (filePath) => {
+    const ext = path.extname(filePath).toLowerCase();
+    if (!imageExtensions.includes(ext)) return;
+    
+    // Check if file is already in database
+    const db = getDatabase();
+    const existing = db.prepare('SELECT id FROM screenshots WHERE storage_path = ?').get(filePath);
+    if (existing) return;
+    
+    sendLog(`Detected new file: ${filePath}`);
+    
+    // Check if file is in a subfolder
+    const relativePath = path.relative(watchDir, filePath);
+    const parts = relativePath.split(path.sep);
+    
+    let folderId = null;
+    if (parts.length > 1) {
+      // File is in a subfolder - create or find folder
+      const folderName = parts[0];
+      let folder = db.prepare('SELECT id FROM folders WHERE name = ?').get(folderName);
+      if (!folder) {
+        folderId = crypto.randomUUID();
+        db.prepare('INSERT INTO folders (id, name) VALUES (?, ?)').run(folderId, folderName);
+        sendLog(`Created folder: ${folderName}`);
+      } else {
+        folderId = folder.id;
+      }
+    }
+    
+    // Import the file (don't copy since it's already in ScreenVault folder)
+    const id = await importFileInPlace(filePath, folderId);
+    
+    if (id && mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('screenshot-imported', { id, filePath });
+    }
+  });
+  
+  folderWatcher.on('addDir', (dirPath) => {
+    if (dirPath === watchDir) return;
+    
+    const folderName = path.basename(dirPath);
+    const db = getDatabase();
+    
+    // Check if folder already exists
+    const existing = db.prepare('SELECT id FROM folders WHERE name = ?').get(folderName);
+    if (existing) return;
+    
+    // Create folder in database
+    const folderId = crypto.randomUUID();
+    db.prepare('INSERT INTO folders (id, name) VALUES (?, ?)').run(folderId, folderName);
+    sendLog(`Detected new folder: ${folderName}`);
+    
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('folder-created', { id: folderId, name: folderName });
+    }
+  });
+  
+  folderWatcher.on('error', (error) => {
+    sendLog(`Folder watcher error: ${error}`, 'error');
+  });
+}
+
+// Import file that's already in ScreenVault folder (no copy needed)
+async function importFileInPlace(filePath, folderId = null) {
+  try {
+    const db = getDatabase();
+    const fileName = path.basename(filePath);
+    const stats = fs.statSync(filePath);
+    const id = crypto.randomUUID();
+    
+    const img = nativeImage.createFromPath(filePath);
+    const size = img.getSize();
+    
+    const ext = path.extname(fileName).toLowerCase();
+    const mimeTypes = {
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif',
+      '.webp': 'image/webp',
+      '.bmp': 'image/bmp'
+    };
+    
+    const stmt = db.prepare(`
+      INSERT INTO screenshots (
+        id, file_name, file_size, file_type, width, height, 
+        storage_path, source, ocr_text, ocr_confidence, 
+        custom_tags, ai_tags, user_notes, is_favorite, is_archived,
+        thumbnail_path, ai_description, folder_id, view_count
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    
+    stmt.run(
+      id,
+      fileName,
+      stats.size,
+      mimeTypes[ext] || 'image/png',
+      size.width || 0,
+      size.height || 0,
+      filePath,
+      'folder-watch',
+      '',
+      null,
+      '[]',
+      '[]',
+      '',
+      0,
+      0,
+      null,
+      null,
+      folderId,
+      0
+    );
+    
+    sendLog(`Auto-imported file: ${fileName}`);
+    
+    // Trigger OCR
+    triggerOCRProcessing(id, filePath);
+    
+    return id;
+  } catch (e) {
+    sendLog(`importFileInPlace error: ${e}`, 'error');
+    return null;
+  }
+}
+
+// Get ScreenVault folder path
+ipcMain.handle('import:getScreenVaultPath', async () => {
+  return { data: screenshotsDir(), error: null };
+});
+
+// Open ScreenVault folder in Finder
+ipcMain.handle('import:openScreenVaultFolder', async () => {
+  try {
+    shell.openPath(screenshotsDir());
+    return { data: true, error: null };
   } catch (error) {
     return { data: null, error: error.message };
   }

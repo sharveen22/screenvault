@@ -43,7 +43,22 @@ declare global {
             file: {
                 read: (path: string) => Promise<{ data: string; error: string | null }>;
                 delete: (path: string) => Promise<boolean>;
+                reveal: (path: string) => Promise<{ data: boolean; error: string | null }>;
+                share: (path: string) => Promise<{ data: boolean; error: string | null }>;
             };
+            import: {
+                files: () => Promise<{ data: string[] | null; error: string | null }>;
+                folder: () => Promise<{ data: { folderId: string; folderName: string; imported: string[] } | null; error: string | null }>;
+                getScreenVaultPath: () => Promise<{ data: string; error: string | null }>;
+                openScreenVaultFolder: () => Promise<{ data: boolean; error: string | null }>;
+            };
+            onScreenshotImported: (callback: (data: { id: string; filePath: string }) => void) => () => void;
+            onFolderCreated: (callback: (data: { id: string; name: string }) => void) => () => void;
+            onScreenshotSaved: (callback: (data: { id: string }) => void) => () => void;
+            renameFile: (oldPath: string, newName: string) => Promise<{ newPath: string | null; error: string | null }>;
+            onOCRProcess: (callback: (data: any) => void) => () => void;
         };
     }
 }
+
+export {};
