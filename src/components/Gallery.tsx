@@ -1,15 +1,18 @@
 import { useState, useEffect, useRef } from 'react';
 import { db, Screenshot } from '../lib/database';
-import { Star, FolderOpen, Share2, Trash2, Image as ImageIcon, RefreshCcw } from 'lucide-react';
+import { Star, FolderOpen, Trash2, Image as ImageIcon } from 'lucide-react';
 import { ScreenshotModal } from './ScreenshotModal';
 
 interface GalleryProps {
   searchQuery: string;
   activeView: 'all' | 'favorites' | 'recent' | 'archived' | string; // string for folder IDs
   onDropSuccess?: () => void;
+  captureStatus?: 'capturing' | 'processing-ocr' | 'saving' | null;
+  sortOrder?: 'newest' | 'oldest';
+  onSortChange?: (order: 'newest' | 'oldest') => void;
 }
 
-export function Gallery({ searchQuery, activeView, onDropSuccess }: GalleryProps) {
+export function Gallery({ searchQuery, activeView, onDropSuccess, captureStatus, sortOrder = 'newest', onSortChange }: GalleryProps) {
   const [screenshots, setScreenshots] = useState<Screenshot[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedScreenshot, setSelectedScreenshot] = useState<Screenshot | null>(null);
@@ -17,8 +20,9 @@ export function Gallery({ searchQuery, activeView, onDropSuccess }: GalleryProps
   useEffect(() => {
     console.log('activeView', activeView);
     console.log('searchQuery', searchQuery);
+    console.log('sortOrder', sortOrder);
     loadScreenshots();
-  }, [activeView, searchQuery]);
+  }, [activeView, searchQuery, sortOrder]);
 
   // Sync selectedScreenshot with updated list
   useEffect(() => {
@@ -52,7 +56,7 @@ export function Gallery({ searchQuery, activeView, onDropSuccess }: GalleryProps
       // Query with WHERE clause - much faster than loading all then filtering
       const primaryRes = await db.from('screenshots').select({
         where,
-        orderBy: { column: 'created_at', direction: 'desc' },
+        orderBy: { column: 'created_at', direction: sortOrder === 'newest' ? 'desc' : 'asc' },
         limit: 1000,
       }) as any;
 
@@ -310,17 +314,9 @@ export function Gallery({ searchQuery, activeView, onDropSuccess }: GalleryProps
           <h2 className="text-2xl font-bold text-[#161419] mb-1 title-font">
             {activeView.charAt(0).toUpperCase() + activeView.slice(1)} Screenshots
           </h2>
-          <p className="text-[#161419] opacity-60 subtitle-font">{screenshots.length} screenshots</p>
-        </div>
-
-        <div>
-          <button
-            onClick={loadScreenshots}
-            className="px-3 py-1.5 bg-transparent border border-[#161419] text-[#161419] hover:bg-[#161419] hover:text-[#e9e6e4] text-sm rounded-none flex items-center gap-2 transition-all subtitle-font"
-          >
-            <RefreshCcw size={16} />
-            Reload
-          </button>
+          <p className="text-[#161419] opacity-60 subtitle-font">
+            {screenshots.length} screenshots • {sortOrder === 'newest' ? 'Newest first' : 'Oldest first'}
+          </p>
         </div>
       </div>
 
