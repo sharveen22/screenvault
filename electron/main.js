@@ -492,6 +492,14 @@ function handleThumbnailClick(filePath) {
 function saveScreenshotToDatabase(filePath) {
   try {
     const db = getDatabase();
+    
+    // Check if file is already in database (prevent duplicates)
+    const existing = db.prepare('SELECT id FROM screenshots WHERE storage_path = ?').get(filePath);
+    if (existing) {
+      sendLog(`Screenshot already in database: ${filePath}`);
+      return existing.id;
+    }
+    
     const stats = fs.statSync(filePath);
     const id = crypto.randomUUID();
     const fileName = path.basename(filePath);
@@ -660,12 +668,13 @@ function createScreenshotPopup(filePath) {
     if (!popupWindow.isDestroyed()) {
       popupWindow.show();
 
-      // Send init data
-      // Note: We use the same channel name but now it's handled by Editor.tsx via preload
-      // We need to make sure preload.js exposes 'onInit' or similar, OR we use the existing IPC
-      // Let's check preload.js. It doesn't have 'onInit'. We should add it or use a generic listener.
-      // Actually, let's just send 'popup:init' and add it to preload.js
-      popupWindow.webContents.send('popup:init', filePath);
+      // Send init data with a small delay to ensure renderer is ready
+      setTimeout(() => {
+        if (popupWindow && !popupWindow.isDestroyed()) {
+          sendLog(`Sending popup:init with filePath: ${filePath}`);
+          popupWindow.webContents.send('popup:init', filePath);
+        }
+      }, 100);
     }
   });
 
@@ -699,24 +708,70 @@ ipcMain.on('popup:close', () => {
 ipcMain.on('popup:save', (_event, dataUrl) => {
   if (lastScreenshotPath) {
     try {
+      const db = getDatabase();
+      const dir = path.dirname(lastScreenshotPath);
+      
+      // Try to find existing screenshot (might have been renamed by OCR)
+      let existingScreenshot = db.prepare('SELECT id, storage_path FROM screenshots WHERE storage_path = ?').get(lastScreenshotPath);
+      
+      // If not found by exact path, search for most recent in same directory
+      if (!existingScreenshot) {
+        existingScreenshot = db.prepare(`
+          SELECT id, storage_path FROM screenshots 
+          WHERE storage_path LIKE ? 
+          ORDER BY created_at DESC 
+          LIMIT 1
+        `).get(`${dir}/%`);
+        
+        if (existingScreenshot) {
+          sendLog(`Found existing screenshot by directory: ${existingScreenshot.storage_path}`);
+        }
+      }
+      
       const image = nativeImage.createFromDataURL(dataUrl);
-      fs.writeFileSync(lastScreenshotPath, image.toPNG());
-      sendLog(`Saved edited screenshot to: ${lastScreenshotPath}`);
+      
+      if (existingScreenshot) {
+        // Update existing file
+        fs.writeFileSync(existingScreenshot.storage_path, image.toPNG());
+        sendLog(`Updated existing screenshot: ${existingScreenshot.storage_path}`);
+        
+        // Update database entry (update file_size and dimensions)
+        const stats = fs.statSync(existingScreenshot.storage_path);
+        const size = image.getSize();
+        db.prepare(`
+          UPDATE screenshots 
+          SET file_size = ?, width = ?, height = ?, updated_at = CURRENT_TIMESTAMP 
+          WHERE id = ?
+        `).run(stats.size, size.width || 0, size.height || 0, existingScreenshot.id);
+        
+        sendLog(`Updated database entry for ID: ${existingScreenshot.id}`);
+      } else {
+        // No existing entry, save as new (shouldn't happen in normal flow)
+        fs.writeFileSync(lastScreenshotPath, image.toPNG());
+        sendLog(`Saved new screenshot to: ${lastScreenshotPath}`);
+        
+        const savedId = saveScreenshotToDatabase(lastScreenshotPath);
+        if (savedId) {
+          sendLog(`Created new database entry: ${savedId}`);
+        }
+      }
 
       // Mark as saved so it won't be deleted on close
       screenshotWasSaved = true;
 
-      // Save to database
-      const savedId = saveScreenshotToDatabase(lastScreenshotPath);
-      
       // Close the editor popup
       if (popupWindow && !popupWindow.isDestroyed()) {
         popupWindow.close();
       }
       
-      // Notify main window - DON'T reload, let OCR complete first
-      if (savedId && mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
-        mainWindow.webContents.send('screenshot-saved', { id: savedId });
+      // Notify main window to refresh
+      if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
+        mainWindow.webContents.send('screenshot-saved', { id: existingScreenshot?.id });
+        setTimeout(() => {
+          if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
+            mainWindow.webContents.reload();
+          }
+        }, 100);
       }
     } catch (e) {
       sendLog(`Save error: ${e}`, 'error');
@@ -743,12 +798,46 @@ ipcMain.on('popup:copy', () => {
   }
 });
 
-ipcMain.on('popup:trash', () => {
-  if (lastScreenshotPath) {
+ipcMain.on('popup:trash', (_event, filePath) => {
+  const pathToDelete = filePath || lastScreenshotPath;
+  sendLog(`popup:trash called with filePath: ${pathToDelete}`);
+  
+  if (pathToDelete) {
     try {
-      if (fs.existsSync(lastScreenshotPath)) {
-        fs.unlinkSync(lastScreenshotPath);
-        sendLog(`Deleted screenshot: ${lastScreenshotPath}`);
+      const db = getDatabase();
+      
+      // Try to find the screenshot in database
+      let screenshot = db.prepare('SELECT id, storage_path FROM screenshots WHERE storage_path = ?').get(pathToDelete);
+      
+      // If found in database, delete it
+      if (screenshot) {
+        const deleted = db.prepare('DELETE FROM screenshots WHERE id = ?').run(screenshot.id);
+        sendLog(`Deleted ${deleted.changes} database entries for ID: ${screenshot.id}, path: ${screenshot.storage_path}`);
+        
+        // Delete the actual file
+        if (fs.existsSync(screenshot.storage_path)) {
+          fs.unlinkSync(screenshot.storage_path);
+          sendLog(`Deleted screenshot file: ${screenshot.storage_path}`);
+        }
+      } else {
+        // Not in database yet (user clicked trash before clicking Done)
+        // Just delete the physical file
+        sendLog(`Screenshot not in database, deleting file only: ${pathToDelete}`);
+        if (fs.existsSync(pathToDelete)) {
+          fs.unlinkSync(pathToDelete);
+          sendLog(`Deleted screenshot file: ${pathToDelete}`);
+        }
+      }
+      
+      // Notify main window to refresh
+      if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
+        sendLog('Sending screenshot-deleted event and reloading main window');
+        mainWindow.webContents.send('screenshot-deleted', { filePath: pathToDelete });
+        setTimeout(() => {
+          if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
+            mainWindow.webContents.reload();
+          }
+        }, 100);
       }
     } catch (e) {
       sendLog(`Error deleting screenshot: ${e}`, 'error');
@@ -1289,6 +1378,11 @@ ipcMain.handle('db:query', async (_e, { table, operation, data, where, orderBy, 
 ipcMain.handle('file:read', async (_e, filePath) => {
   try { return { data: fs.readFileSync(filePath).toString('base64'), error: null }; }
   catch (error) { return { data: null, error: error.message }; }
+});
+
+ipcMain.handle('file:exists', async (_e, filePath) => {
+  try { return { data: fs.existsSync(filePath), error: null }; }
+  catch (error) { return { data: false, error: error.message }; }
 });
 
 ipcMain.handle('file:reveal', async (_e, filePath) => {

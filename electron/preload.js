@@ -31,6 +31,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     };
   },
 
+  onScreenshotDeleted: (callback) => {
+    if (typeof callback !== 'function') return;
+    const handler = (_evt, data) => callback(data);
+    ipcRenderer.on('screenshot-deleted', handler);
+    return () => {
+      try {
+        ipcRenderer.removeListener('screenshot-deleted', handler);
+      } catch { }
+    };
+  },
+
   offScreenshotCaptured: (callback) => {
     // optional explicit off
     for (const h of screenshotListeners) {
@@ -62,7 +73,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   copy: () => ipcRenderer.send('popup:copy'),
   copyData: (dataUrl) => ipcRenderer.send('popup:copy-data', dataUrl),
   save: (dataUrl) => ipcRenderer.send('popup:save', dataUrl),
-  trash: () => ipcRenderer.send('popup:trash'),
+  trash: (filePath) => ipcRenderer.send('popup:trash', filePath),
   share: (dataUrl) => ipcRenderer.send('popup:share', dataUrl),
   close: () => ipcRenderer.send('popup:close'),
 
@@ -88,6 +99,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   file: {
     delete: (filePath) => ipcRenderer.invoke('file:delete', filePath),
     read: (filePath) => ipcRenderer.invoke('file:read', filePath),
+    exists: (filePath) => ipcRenderer.invoke('file:exists', filePath),
     reveal: (filePath) => ipcRenderer.invoke('file:reveal', filePath),
     share: (filePath) => ipcRenderer.invoke('file:share', filePath),
   },

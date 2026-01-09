@@ -125,7 +125,22 @@ export function Gallery({ searchQuery, activeView, onDropSuccess, captureStatus,
         });
       }
 
-      // --- 5) Set hasil ---
+      // =========================
+      // 5) FILTER OUT NON-EXISTENT FILES
+      // =========================
+      // Check if files actually exist on disk
+      if (window.electronAPI?.file?.exists) {
+        const existenceChecks = await Promise.all(
+          filtered.map(async (s: any) => {
+            const { data: exists } = await window.electronAPI.file.exists(s.storage_path);
+            return exists ? s : null;
+          })
+        );
+        filtered = existenceChecks.filter((s): s is any => s !== null);
+        console.log('[Gallery] After file existence check:', filtered.length);
+      }
+
+      // --- 6) Set hasil ---
       console.log('[Gallery] final set', { total: filtered.length });
       setScreenshots(filtered as any);
     } catch (err) {
