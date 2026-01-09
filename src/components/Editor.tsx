@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Copy, Share2, Pen, Type, Square, ArrowRight, Undo, Redo, Trash2, Crop, Check, X, MousePointer2, Save, AlertTriangle } from 'lucide-react';
+import { Copy, Share2, Pen, Type, Square, ArrowRight, Undo, Redo, Crop, Check, X, MousePointer2, Save, AlertTriangle } from 'lucide-react';
 
 // --- Types ---
 type Tool = 'select' | 'pen' | 'text' | 'rect' | 'arrow' | 'crop' | null;
@@ -80,13 +80,17 @@ export function Editor() {
 
     // --- Init ---
     useEffect(() => {
+        console.log('[Editor] Setting up onInit listener');
         const removeListener = window.electronAPI.onInit((path) => {
+            console.log('[Editor] Received init with path:', path);
             setFilePath(path);
             window.electronAPI.file.read(path).then(({ data }) => {
+                console.log('[Editor] File read result, has data:', !!data);
                 if (data) {
                     const src = `data:image/png;base64,${data}`;
                     const img = new Image();
                     img.onload = () => {
+                        console.log('[Editor] Image loaded:', img.width, 'x', img.height);
                         setImageBitmap(img);
                         setCropRect({ x: 0, y: 0, w: img.width, h: img.height });
 
@@ -95,8 +99,13 @@ export function Editor() {
                         setHistory([initialState]);
                         setHistoryStep(0);
                     };
+                    img.onerror = (e) => {
+                        console.error('[Editor] Image load error:', e);
+                    };
                     img.src = src;
                 }
+            }).catch(err => {
+                console.error('[Editor] File read error:', err);
             });
         });
 
@@ -628,8 +637,6 @@ export function Editor() {
                             </button>
                         )}
 
-                        <IconButton icon={<Trash2 size={iconSize} />} onClick={() => window.electronAPI.trash()} className="text-red-600" title="Delete" padding={buttonPadding} hoverBg="#f5e5e5" />
-                        
                         <div className={`w-px ${dividerHeight} flex-shrink-0`} style={{ backgroundColor: '#b0adab' }} />
                         
                         <div className="flex items-center gap-0">
