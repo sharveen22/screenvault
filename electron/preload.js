@@ -105,11 +105,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   renameFile: (oldPath, newName) => ipcRenderer.invoke('file:rename', { oldPath, newName }),
   
-  // OCR processing listener
+  // OCR processing listener (legacy - for renderer-side OCR)
   onOCRProcess: (callback) => {
     const handler = (_evt, data) => callback(data);
     ipcRenderer.on('ocr:process', handler);
     return () => ipcRenderer.removeListener('ocr:process', handler);
+  },
+  
+  // OCR complete listener (for main-process OCR)
+  onOCRComplete: (callback) => {
+    const handler = (_evt, data) => callback(data);
+    ipcRenderer.on('ocr:complete', handler);
+    return () => ipcRenderer.removeListener('ocr:complete', handler);
   },
   
   // Import APIs
@@ -130,5 +137,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const handler = (_evt, data) => callback(data);
     ipcRenderer.on('folder-created', handler);
     return () => ipcRenderer.removeListener('folder-created', handler);
+  },
+  
+  // Window focus listener (for auto-refresh when app becomes visible)
+  onWindowFocus: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on('window-focus', handler);
+    return () => ipcRenderer.removeListener('window-focus', handler);
   },
 });

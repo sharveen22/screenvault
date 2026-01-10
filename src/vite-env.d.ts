@@ -55,6 +55,7 @@ declare global {
             onScreenshotImported: (callback: (data: { id: string; filePath: string }) => void) => () => void;
             onFolderCreated: (callback: (data: { id: string; name: string }) => void) => () => void;
             onScreenshotSaved: (callback: (data: { id: string }) => void) => () => void;
+            onScreenshotDeleted: (callback: (data: { filePath: string }) => void) => () => void;
             renameFile: (oldPath: string, newName: string) => Promise<{ newPath: string | null; error: string | null }>;
             onOCRProcess: (callback: (data: any) => void) => () => void;
         };

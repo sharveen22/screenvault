@@ -202,10 +202,11 @@ export function useElectronScreenshots() {
           await html5Notify('Screenshot saved', `${baseName}`);
         }
 
-        // Refresh UI immediately
-        setTimeout(() => {
-          if (typeof window !== 'undefined') window.location.reload();
-        }, 50);
+        // DON'T reload page - this brings the window to foreground!
+        // Dispatch event instead for gallery to refresh
+        window.dispatchEvent(new CustomEvent('screenshot-saved-local', { 
+          detail: { id: rowId, fileName: baseName } 
+        }));
 
         // ---- OCR IN BACKGROUND (async, non-blocking) ----
         processOCRInBackground(file, rowId, baseName, (data as any).filePath);
@@ -294,15 +295,13 @@ export function useElectronScreenshots() {
       } else {
         console.log(`[OCR] Completed for ${data.screenshotId}`);
         
-        // Dispatch custom event to notify gallery to refresh
+        // Dispatch custom event to notify gallery to refresh (without page reload)
         window.dispatchEvent(new CustomEvent('ocr-complete', { 
           detail: { screenshotId: data.screenshotId, smartName, tags } 
         }));
         
-        // Also reload page to show updated data
-        setTimeout(() => {
-          window.location.reload();
-        }, 500);
+        // DON'T reload page - this brings the window to foreground!
+        // The gallery will refresh via the ocr-complete event
       }
     } catch (e) {
       console.error('[OCR] Processing failed:', e);

@@ -11,19 +11,18 @@ interface GalleryProps {
   sortOrder?: 'newest' | 'oldest';
   onSortChange?: (order: 'newest' | 'oldest') => void;
   processingOCR?: Set<string>; // IDs of screenshots currently processing OCR
+  refreshTrigger?: number; // Trigger to force refresh
 }
 
-export function Gallery({ searchQuery, activeView, onDropSuccess, captureStatus, sortOrder = 'newest', onSortChange, processingOCR = new Set() }: GalleryProps) {
+export function Gallery({ searchQuery, activeView, onDropSuccess, captureStatus, sortOrder = 'newest', onSortChange, processingOCR = new Set(), refreshTrigger = 0 }: GalleryProps) {
   const [screenshots, setScreenshots] = useState<Screenshot[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedScreenshot, setSelectedScreenshot] = useState<Screenshot | null>(null);
 
   useEffect(() => {
-    console.log('activeView', activeView);
-    console.log('searchQuery', searchQuery);
-    console.log('sortOrder', sortOrder);
+    console.log('[Gallery] Refresh triggered:', { activeView, searchQuery, sortOrder, refreshTrigger, timestamp: Date.now() });
     loadScreenshots();
-  }, [activeView, searchQuery, sortOrder]);
+  }, [activeView, searchQuery, sortOrder, refreshTrigger]);
 
   // Sync selectedScreenshot with updated list
   useEffect(() => {
@@ -36,6 +35,7 @@ export function Gallery({ searchQuery, activeView, onDropSuccess, captureStatus,
   }, [screenshots]);
 
   const loadScreenshots = async () => {
+    console.log('[Gallery] loadScreenshots called at', Date.now());
     setLoading(true);
     try {
       const qRaw = (searchQuery || '').trim().toLowerCase();
@@ -66,6 +66,17 @@ export function Gallery({ searchQuery, activeView, onDropSuccess, captureStatus,
         console.warn('[Gallery] primary error:', primaryRes.error);
       }
       console.log('[Gallery] primary count:', rows.length);
+      
+      // Log first few rows to check tags
+      if (rows.length > 0) {
+        console.log('[Gallery] First row tags check:', {
+          id: rows[0].id,
+          file_name: rows[0].file_name,
+          custom_tags: rows[0].custom_tags,
+          custom_tags_type: typeof rows[0].custom_tags,
+          custom_tags_isArray: Array.isArray(rows[0].custom_tags),
+        });
+      }
 
       // Filter for 'recent' view (last 7 days) - can't easily do in WHERE clause
       let filtered = rows;
