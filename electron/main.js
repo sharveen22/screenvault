@@ -18,6 +18,7 @@ const path = require('path');
 const fs = require('fs');
 const { spawn, spawnSync } = require('child_process');
 const crypto = require('crypto');
+const Tesseract = require('tesseract.js');
 app.setAppUserModelId('com.screenvault.app.taufiq');
 
 // Global error handlers
@@ -46,7 +47,12 @@ function sendLog(msg, level = 'info') {
   try {
     if (level === 'error') console.error('[ScreenVault]', payload.ts, level.toUpperCase(), msg);
     else console.log('[ScreenVault]', payload.ts, level.toUpperCase(), msg);
-    mainWindow?.webContents?.send?.('shot:log', payload);
+    // Only send to renderer if window exists and is not destroyed
+    try {
+      if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
+        mainWindow.webContents.send('shot:log', payload);
+      }
+    } catch { }
   } catch { }
 }
 
@@ -114,6 +120,9 @@ function createWindow() {
     icon: path.join(__dirname, '../public/icon.png'),
   });
 
+  // Protect window content from being captured in screenshots
+  mainWindow.setContentProtection(true);
+
   const isDev = process.env.NODE_ENV === 'development';
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
@@ -127,8 +136,23 @@ function createWindow() {
   }
 
   mainWindow.once('ready-to-show', () => {
+    // Show window on first launch, dock is already hidden so this won't cause focus issues
+    if (process.platform === 'darwin') app.dock.show();
     mainWindow.show();
+  });
 
+  // Send focus event to renderer when window gains focus (for auto-refresh)
+  mainWindow.on('focus', () => {
+    if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
+      mainWindow.webContents.send('window-focus');
+    }
+  });
+
+  // Also send when window is shown
+  mainWindow.on('show', () => {
+    if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
+      mainWindow.webContents.send('window-focus');
+    }
   });
 
   mainWindow.on('close', (event) => {
@@ -136,6 +160,8 @@ function createWindow() {
     if (process.platform === 'darwin' && !isQuitting) {
       event.preventDefault();
       mainWindow.hide();
+      // Hide dock icon when window is hidden - back to tray-only mode
+      app.dock.hide();
     }
     return false;
   });
@@ -160,7 +186,12 @@ function createTray() {
 
   tray = new Tray(trayIcon);
   const menu = Menu.buildFromTemplate([
-    { label: 'Open ScreenVault', click: () => !isCapturing && mainWindow?.show() },
+    { label: 'Open ScreenVault', click: () => { 
+      if (!isCapturing && mainWindow) {
+        if (process.platform === 'darwin') app.dock.show();
+        mainWindow.show();
+      }
+    }},
     { label: 'Take Screenshot (Ctrl/Cmd+Shift+S)', click: () => takeScreenshotSystem() },
     { type: 'separator' },
     { label: 'Open Screen Recording Settings (macOS)', click: () => openMacScreenSettings() },
@@ -169,41 +200,15 @@ function createTray() {
   ]);
   tray.setToolTip('ScreenVault - Screenshot Manager');
   tray.setContextMenu(menu);
-  tray.on('click', () => { if (!isCapturing && mainWindow) mainWindow.show(); });
+  tray.on('click', () => { 
+    if (!isCapturing && mainWindow) {
+      if (process.platform === 'darwin') app.dock.show();
+      mainWindow.show();
+    }
+  });
 }
 
-/* Prevent app window ikut ke-capture (opsional) */
-function hideAppWindowForCapture() {
-  if (!mainWindow) return;
-  try {
-    mainWindow._prevAlwaysOnTop = mainWindow.isAlwaysOnTop?.() || false;
-    mainWindow.setContentProtection(true);
-    mainWindow.setIgnoreMouseEvents(true, { forward: true });
-    mainWindow.setFocusable(false);
-    if (mainWindow.setVisibleOnAllWorkspaces) {
-      mainWindow.setVisibleOnAllWorkspaces(false, { visibleOnFullScreen: false });
-    }
-    mainWindow.setAlwaysOnTop(false);
-    mainWindow.setOpacity(0); // jangan hide, biar overlay OS tetap jalan
-  } catch { }
-}
-function releaseAppWindowAfterCapture() {
-  setTimeout(() => {
-    if (!mainWindow) return;
-    try {
-      mainWindow.setContentProtection(false);
-      mainWindow.setIgnoreMouseEvents(false);
-      mainWindow.setFocusable(true);
-      if (typeof mainWindow._prevAlwaysOnTop === 'boolean') {
-        mainWindow.setAlwaysOnTop(mainWindow._prevAlwaysOnTop);
-        delete mainWindow._prevAlwaysOnTop;
-      } else {
-        mainWindow.setAlwaysOnTop(false);
-      }
-      mainWindow.setOpacity(1);
-    } catch { }
-  }, 120);
-}
+/* Window content protection is now set permanently in createWindow() */
 
 /* ====================== macOS Permission ====================== */
 function openMacScreenSettings() {
@@ -428,8 +433,9 @@ function createThumbnailPreview(filePath) {
 
   thumbnailWindow.once('ready-to-show', () => {
     if (!thumbnailWindow.isDestroyed()) {
-      thumbnailWindow.show();
-      sendLog('Thumbnail preview shown');
+      // Use showInactive() to prevent app activation - keeps app in background
+      thumbnailWindow.showInactive();
+      sendLog('Thumbnail preview shown (inactive)');
       
       // Auto-dismiss and save after 6 seconds
       popupTimeout = setTimeout(() => {
@@ -490,13 +496,20 @@ function handleThumbnailClick(filePath) {
 
 // Save screenshot directly to database
 function saveScreenshotToDatabase(filePath) {
+  console.log(`[SaveDB] Saving screenshot: ${filePath}`);
+  
   try {
     const db = getDatabase();
     
     // Check if file is already in database (prevent duplicates)
-    const existing = db.prepare('SELECT id FROM screenshots WHERE storage_path = ?').get(filePath);
+    const existing = db.prepare('SELECT id, ocr_text FROM screenshots WHERE storage_path = ?').get(filePath);
     if (existing) {
-      sendLog(`Screenshot already in database: ${filePath}`);
+      console.log(`[SaveDB] Screenshot already in database: ${filePath}`);
+      // Run OCR if it hasn't been processed yet
+      if (!existing.ocr_text || existing.ocr_text === '') {
+        console.log(`[SaveDB] Running OCR for existing screenshot: ${existing.id}`);
+        runOCRInMainProcess(existing.id, filePath);
+      }
       return existing.id;
     }
     
@@ -539,46 +552,233 @@ function saveScreenshotToDatabase(filePath) {
       0             // view_count
     );
     
-    sendLog(`Screenshot saved to database: ${id} - ${fileName}`);
+    console.log(`[SaveDB] Screenshot saved to database: ${id} - ${fileName}`);
     
-    // Trigger OCR processing in renderer
-    triggerOCRProcessing(id, filePath);
+    // Trigger OCR processing in main process (runs in background)
+    console.log(`[SaveDB] Starting OCR for ${id}`);
+    runOCRInMainProcess(id, filePath);
     
     return id;
   } catch (e) {
-    sendLog(`saveScreenshotToDatabase error: ${e}`, 'error');
+    console.error(`[SaveDB] Error: ${e}`);
     return null;
   }
 }
 
-// Trigger OCR processing in renderer process
-function triggerOCRProcessing(screenshotId, filePath) {
+// Generate smart filename from OCR text
+function generateSmartFilename(ocrText, originalName) {
+  if (!ocrText || !ocrText.trim()) return originalName;
+  
+  // Extract first meaningful line/phrase (up to 50 chars)
+  const lines = ocrText.split('\n').filter(l => l.trim().length > 3);
+  let smartPart = (lines[0] || '').trim().slice(0, 50);
+  
+  // Clean up: remove special chars, replace spaces with underscores
+  smartPart = smartPart
+    .replace(/[^a-zA-Z0-9\s-]/g, '')
+    .replace(/\s+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '')
+    .toLowerCase();
+  
+  if (!smartPart || smartPart.length < 3) return originalName;
+  
+  // Get extension from original
+  const ext = path.extname(originalName) || '.png';
+  const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  
+  return `${smartPart}_${timestamp}${ext}`;
+}
+
+// Generate tags from OCR text
+function generateTags(ocrText) {
+  if (!ocrText || !ocrText.trim()) return [];
+  
+  const tags = [];
+  const lowerText = ocrText.toLowerCase();
+  const words = lowerText.split(/\s+/).filter(w => w.length > 2);
+  
+  // Error/Status patterns
+  if (/error|exception|failed|failure|crash|bug|issue/i.test(lowerText)) tags.push('error');
+  if (/warning|warn|caution|alert/i.test(lowerText)) tags.push('warning');
+  if (/success|completed|done|passed|approved|confirmed/i.test(lowerText)) tags.push('success');
+  if (/loading|processing|pending|waiting/i.test(lowerText)) tags.push('loading');
+  
+  // Development/Code patterns
+  if (/function|const|let|var|import|export|class|def |return|async|await/i.test(lowerText)) tags.push('code');
+  if (/console|terminal|bash|shell|command|npm|yarn|git|brew/i.test(lowerText)) tags.push('terminal');
+  if (/debug|log|trace|stack/i.test(lowerText)) tags.push('debug');
+  if (/test|spec|jest|mocha|cypress/i.test(lowerText)) tags.push('testing');
+  if (/api|endpoint|request|response|json|xml/i.test(lowerText)) tags.push('api');
+  if (/database|sql|query|table|mongodb|postgres/i.test(lowerText)) tags.push('database');
+  
+  // Web/URL patterns
+  if (/http|https|www\.|\.com|\.org|\.io|\.dev|\.app|localhost/i.test(lowerText)) tags.push('web');
+  if (/login|signin|signup|password|auth|account/i.test(lowerText)) tags.push('auth');
+  if (/dashboard|admin|panel|analytics/i.test(lowerText)) tags.push('dashboard');
+  
+  // Communication patterns
+  if (/@|email|inbox|gmail|outlook|mail/i.test(lowerText)) tags.push('email');
+  if (/chat|message|slack|discord|teams|conversation/i.test(lowerText)) tags.push('chat');
+  if (/notification|notify|alert|reminder/i.test(lowerText)) tags.push('notification');
+  
+  // Document/Content patterns
+  if (/document|doc|pdf|file|folder|directory/i.test(lowerText)) tags.push('document');
+  if (/image|photo|picture|screenshot|png|jpg|jpeg/i.test(lowerText)) tags.push('image');
+  if (/video|youtube|vimeo|mp4|stream/i.test(lowerText)) tags.push('video');
+  if (/table|spreadsheet|excel|csv|data/i.test(lowerText)) tags.push('data');
+  
+  // UI/Design patterns
+  if (/button|click|menu|dropdown|modal|popup|dialog/i.test(lowerText)) tags.push('ui');
+  if (/design|figma|sketch|adobe|photoshop|canva/i.test(lowerText)) tags.push('design');
+  if (/settings|preferences|config|options|setup/i.test(lowerText)) tags.push('settings');
+  
+  // Business/Finance patterns
+  if (/\$|price|cost|payment|invoice|billing|subscription/i.test(lowerText)) tags.push('finance');
+  if (/order|cart|checkout|purchase|buy|shop/i.test(lowerText)) tags.push('shopping');
+  if (/report|analytics|metrics|stats|chart|graph/i.test(lowerText)) tags.push('analytics');
+  
+  // Social/Platform patterns
+  if (/github|gitlab|bitbucket|repo|repository|commit|pull|merge/i.test(lowerText)) tags.push('github');
+  if (/twitter|tweet|facebook|instagram|linkedin|social/i.test(lowerText)) tags.push('social');
+  if (/google|chrome|safari|firefox|browser/i.test(lowerText)) tags.push('browser');
+  if (/vscode|visual studio|intellij|xcode|editor|ide/i.test(lowerText)) tags.push('editor');
+  
+  // If no specific tags found, try to extract common nouns
+  if (tags.length === 0) {
+    // Look for capitalized words that might be app/product names
+    const capitalizedWords = ocrText.match(/\b[A-Z][a-z]{2,}\b/g) || [];
+    const uniqueCapitalized = [...new Set(capitalizedWords)].slice(0, 2);
+    uniqueCapitalized.forEach(word => {
+      if (word.length >= 3 && word.length <= 15) {
+        tags.push(word.toLowerCase());
+      }
+    });
+  }
+  
+  // Remove duplicates and limit to 5 tags
+  const uniqueTags = [...new Set(tags)];
+  return uniqueTags.slice(0, 5);
+}
+
+// Run OCR in main process (background, doesn't require window)
+async function runOCRInMainProcess(screenshotId, filePath) {
+  console.log(`[OCR-Main] Starting OCR for ${screenshotId}: ${filePath}`);
+  
   try {
-    if (!mainWindow || mainWindow.isDestroyed()) {
-      sendLog('triggerOCRProcessing: mainWindow not available', 'error');
+    // Verify file exists
+    if (!fs.existsSync(filePath)) {
+      console.error(`[OCR-Main] File not found: ${filePath}`);
+      notifyRendererOCRComplete(screenshotId, null, []);
       return;
     }
     
-    if (!mainWindow.webContents) {
-      sendLog('triggerOCRProcessing: webContents not available', 'error');
-      return;
-    }
+    console.log(`[OCR-Main] File exists, starting Tesseract...`);
     
-    const buffer = fs.readFileSync(filePath);
-    const base64 = Buffer.from(buffer).toString('base64');
-    
-    sendLog(`Sending ocr:process event for ${screenshotId}, file: ${filePath}`);
-    
-    mainWindow.webContents.send('ocr:process', {
-      screenshotId,
-      filePath,
-      fileName: path.basename(filePath),
-      base64
+    // Use simpler recognize API
+    const result = await Tesseract.recognize(filePath, 'eng', {
+      logger: m => {
+        if (m.status === 'recognizing text' && m.progress) {
+          console.log(`[OCR-Main] Progress: ${Math.round(m.progress * 100)}%`);
+        }
+      }
     });
     
-    sendLog(`Triggered OCR processing for ${screenshotId}`);
+    const ocrText = result.data.text || '';
+    const ocrConf = result.data.confidence || null;
+    
+    console.log(`[OCR-Main] Extracted ${ocrText.length} chars, confidence: ${ocrConf}`);
+    
+    if (!ocrText.trim()) {
+      console.log('[OCR-Main] No text found, skipping update');
+      // Notify renderer that OCR is complete (even if no text)
+      notifyRendererOCRComplete(screenshotId, null, []);
+      return;
+    }
+    
+    // Generate smart filename and tags
+    const originalName = path.basename(filePath);
+    const smartName = generateSmartFilename(ocrText, originalName);
+    const tags = generateTags(ocrText);
+    
+    console.log(`[OCR-Main] Smart name: ${smartName}, Tags: ${tags.join(', ')}`);
+    
+    // Rename file on disk
+    let newStoragePath = filePath;
+    if (smartName !== originalName) {
+      const dir = path.dirname(filePath);
+      const newPath = path.join(dir, smartName);
+      
+      // Check if new path already exists
+      if (!fs.existsSync(newPath) || filePath === newPath) {
+        try {
+          fs.renameSync(filePath, newPath);
+          newStoragePath = newPath;
+          console.log(`[OCR-Main] Renamed: ${filePath} -> ${newPath}`);
+        } catch (renameErr) {
+          console.error(`[OCR-Main] Rename failed: ${renameErr}`);
+        }
+      } else {
+        // Add timestamp to make unique
+        const ext = path.extname(smartName);
+        const base = path.basename(smartName, ext);
+        const uniqueName = `${base}_${Date.now()}${ext}`;
+        const uniquePath = path.join(dir, uniqueName);
+        try {
+          fs.renameSync(filePath, uniquePath);
+          newStoragePath = uniquePath;
+          console.log(`[OCR-Main] Renamed (unique): ${filePath} -> ${uniquePath}`);
+        } catch (renameErr) {
+          console.error(`[OCR-Main] Rename failed: ${renameErr}`);
+        }
+      }
+    }
+    
+    // Update database
+    const db = getDatabase();
+    db.prepare(`
+      UPDATE screenshots 
+      SET file_name = ?, storage_path = ?, ocr_text = ?, ocr_confidence = ?, custom_tags = ?, updated_at = CURRENT_TIMESTAMP 
+      WHERE id = ?
+    `).run(
+      path.basename(newStoragePath),
+      newStoragePath,
+      ocrText,
+      ocrConf,
+      JSON.stringify(tags),
+      screenshotId
+    );
+    
+    console.log(`[OCR-Main] Database updated for ${screenshotId}`);
+    
+    // Notify renderer that OCR is complete
+    notifyRendererOCRComplete(screenshotId, path.basename(newStoragePath), tags);
+    
   } catch (e) {
-    sendLog(`triggerOCRProcessing error: ${e}`, 'error');
+    console.error(`[OCR-Main] Error: ${e}`);
+    // Still notify renderer so it can clear processing state
+    notifyRendererOCRComplete(screenshotId, null, []);
+  }
+}
+
+// Notify renderer that OCR is complete (for UI refresh)
+function notifyRendererOCRComplete(screenshotId, smartName, tags) {
+  console.log(`[OCR-Main] notifyRendererOCRComplete called:`, { screenshotId, smartName, tags });
+  try {
+    const windowExists = mainWindow && !mainWindow.isDestroyed();
+    const hasWebContents = windowExists && mainWindow.webContents;
+    console.log(`[OCR-Main] Window state: exists=${windowExists}, hasWebContents=${hasWebContents}`);
+    
+    if (hasWebContents) {
+      console.log(`[OCR-Main] Sending ocr:complete event NOW`);
+      mainWindow.webContents.send('ocr:complete', { screenshotId, smartName, tags });
+      sendLog(`[OCR-Main] Sent ocr:complete to renderer for ${screenshotId}`);
+    } else {
+      console.log(`[OCR-Main] Cannot send - window not available`);
+    }
+  } catch (e) {
+    console.error(`[OCR-Main] Failed to notify renderer:`, e);
+    sendLog(`[OCR-Main] Failed to notify renderer: ${e}`, 'error');
   }
 }
 
@@ -900,7 +1100,6 @@ ipcMain.on('popup:edit', () => {
 async function takeScreenshotSystem() {
   if (isCapturing) return;
   isCapturing = true;
-  hideAppWindowForCapture();
 
   try {
     const outPath = await captureWithSystem();
@@ -925,7 +1124,6 @@ async function takeScreenshotSystem() {
     dialog.showErrorBox('Capture error', String(e));
   } finally {
     isCapturing = false;
-    releaseAppWindowAfterCapture();
   }
 }
 
@@ -1123,7 +1321,12 @@ function linuxCaptureFile() {
 /* ====================== Shortcuts & lifecycle ====================== */
 function registerGlobalShortcuts() {
   const ok1 = globalShortcut.register('CommandOrControl+Shift+S', () => takeScreenshotSystem());
-  const ok2 = globalShortcut.register('CommandOrControl+Shift+A', () => { if (!isCapturing && mainWindow) mainWindow.show(); });
+  const ok2 = globalShortcut.register('CommandOrControl+Shift+A', () => { 
+    if (!isCapturing && mainWindow) {
+      if (process.platform === 'darwin') app.dock.show();
+      mainWindow.show();
+    }
+  });
 
   if (!ok1) sendLog('Failed to register screenshot shortcut', 'error');
   if (!ok2) sendLog('Failed to register show app shortcut', 'error');
@@ -1160,6 +1363,12 @@ async function checkPermissions() {
 }
 
 app.whenReady().then(async () => {
+  // Hide dock icon - make this a tray-only app like CleanShot X / Shottr
+  if (process.platform === 'darwin') {
+    app.dock.hide();
+    sendLog('Dock icon hidden - running as menu bar app');
+  }
+
   await checkPermissions();
 
   initDatabase();
@@ -1197,6 +1406,7 @@ app.whenReady().then(async () => {
   app.on('activate', () => {
     // On macOS, clicking dock icon should show the window
     if (mainWindow) {
+      if (process.platform === 'darwin') app.dock.show();
       mainWindow.show();
     } else {
       createWindow();
@@ -1706,7 +1916,7 @@ async function importSingleFileToFolder(sourcePath, folderId, destFolderPath) {
     sendLog(`Imported file ${finalFileName} to folder ${path.basename(destFolderPath)}`);
     
     // Trigger OCR processing
-    triggerOCRProcessing(id, finalPath);
+    runOCRInMainProcess(id, finalPath);
     
     return id;
   } catch (error) {
@@ -1787,7 +1997,7 @@ async function importSingleFile(sourcePath, folderId = null) {
     sendLog(`Imported file: ${finalFileName} (id: ${id})`);
     
     // Trigger OCR processing
-    triggerOCRProcessing(id, sourcePath);
+    runOCRInMainProcess(id, sourcePath);
     
     return id;
   } catch (e) {
@@ -1935,7 +2145,7 @@ async function importFileInPlace(filePath, folderId = null) {
     sendLog(`Auto-imported file: ${fileName}`);
     
     // Trigger OCR
-    triggerOCRProcessing(id, filePath);
+    runOCRInMainProcess(id, filePath);
     
     return id;
   } catch (e) {
