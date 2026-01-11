@@ -18,11 +18,39 @@ export function Gallery({ searchQuery, activeView, onDropSuccess, captureStatus,
   const [screenshots, setScreenshots] = useState<Screenshot[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedScreenshot, setSelectedScreenshot] = useState<Screenshot | null>(null);
+  const mountedRef = useRef(false);
+  const lastPropsRef = useRef({ view: activeView, query: searchQuery, sort: sortOrder });
 
+  // Initial load on mount ONLY
   useEffect(() => {
-    console.log('[Gallery] Refresh triggered:', { activeView, searchQuery, sortOrder, refreshTrigger, timestamp: Date.now() });
-    loadScreenshots();
-  }, [activeView, searchQuery, sortOrder, refreshTrigger]);
+    if (mountedRef.current) return;
+    mountedRef.current = true;
+    console.log('[Gallery] Initial mount - loading once');
+    loadScreenshots(false);
+  }, []);
+
+  // Handle prop changes (view, search, sort) - but NOT on mount
+  useEffect(() => {
+    if (!mountedRef.current) return; // Skip on mount
+    
+    const last = lastPropsRef.current;
+    const changed = activeView !== last.view || searchQuery !== last.query || sortOrder !== last.sort;
+    
+    if (changed) {
+      console.log('[Gallery] Props changed - reloading');
+      lastPropsRef.current = { view: activeView, query: searchQuery, sort: sortOrder };
+      loadScreenshots(false);
+    }
+  }, [activeView, searchQuery, sortOrder]);
+
+  // Handle explicit refresh trigger - but NOT on mount
+  useEffect(() => {
+    if (!mountedRef.current) return; // Skip on mount
+    if (refreshTrigger === 0) return; // Skip initial value
+    
+    console.log('[Gallery] Refresh trigger:', refreshTrigger);
+    loadScreenshots(true); // silent refresh
+  }, [refreshTrigger]);
 
   // Sync selectedScreenshot with updated list
   useEffect(() => {
@@ -34,9 +62,9 @@ export function Gallery({ searchQuery, activeView, onDropSuccess, captureStatus,
     }
   }, [screenshots]);
 
-  const loadScreenshots = async () => {
-    console.log('[Gallery] loadScreenshots called at', Date.now());
-    setLoading(true);
+  const loadScreenshots = async (silent = false) => {
+    console.log('[Gallery] loadScreenshots called at', Date.now(), { silent });
+    if (!silent) setLoading(true);
     try {
       const qRaw = (searchQuery || '').trim().toLowerCase();
 
@@ -151,8 +179,8 @@ export function Gallery({ searchQuery, activeView, onDropSuccess, captureStatus,
         console.log('[Gallery] After file existence check:', filtered.length);
       }
 
-      // --- 6) Set hasil ---
-      console.log('[Gallery] final set', { total: filtered.length });
+      // --- 6) Set results ---
+      console.log('[Gallery] Setting screenshots:', filtered.length);
       setScreenshots(filtered as any);
     } catch (err) {
       console.error('Error loading screenshots:', err);
@@ -397,16 +425,12 @@ function ScreenshotCard({
   const [isVisible, setIsVisible] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
 
-  // Check if this screenshot is likely still processing OCR
-  // (created recently and has no OCR text yet)
-  const isRecentlyCreated = () => {
-    const createdAt = new Date(screenshot.created_at).getTime();
-    const now = Date.now();
-    const ageSeconds = (now - createdAt) / 1000;
-    return ageSeconds < 60; // Within last 60 seconds
-  };
-  
-  const isLikelyProcessing = isProcessingOCR || (isRecentlyCreated() && !screenshot.ocr_text);
+  // Show processing indicator if:
+  // 1. Explicitly marked as processing OCR, OR
+  // 2. Has no tags AND no OCR text (OCR hasn't completed yet)
+  const hasTags = screenshot.custom_tags && screenshot.custom_tags.length > 0;
+  const hasOcrText = screenshot.ocr_text && screenshot.ocr_text.trim().length > 0;
+  const isLikelyProcessing = isProcessingOCR || (!hasTags && !hasOcrText);
 
   // Intersection Observer for lazy loading
   useEffect(() => {
