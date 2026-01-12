@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useElectronScreenshots } from '../hooks/useElectronScreenshots';
 import { db } from '../lib/database';
-import { Camera, Search, Folder, Star, Plus, Upload, FolderOpen, ChevronDown, Trash2 } from 'lucide-react';
+import { Camera, Search, Folder, Star, Plus, Upload, FolderOpen, ChevronDown, Trash2, Keyboard } from 'lucide-react';
 import { Gallery } from './Gallery';
 
 interface FolderData {
@@ -26,6 +26,7 @@ export function Dashboard() {
   const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
   const [editFolderName, setEditFolderName] = useState('');
   const [showImportMenu, setShowImportMenu] = useState(false);
+  const [showShortcutsMenu, setShowShortcutsMenu] = useState(false);
   const [allCount, setAllCount] = useState(0);
   const [favCount, setFavCount] = useState(0);
   const [draggingFolderId, setDraggingFolderId] = useState<string | null>(null);
@@ -194,13 +195,13 @@ export function Dashboard() {
   };
 
   // Folder card
-  const FolderCard = ({ viewId, name, count, icon, subCount }: { viewId: string, name: string, count: number, icon: React.ReactNode, subCount?: number }) => {
+  const FolderCard = ({ viewId, name, count, icon, subCount, parentName }: { viewId: string, name: string, count: number, icon: React.ReactNode, subCount?: number, parentName?: string }) => {
     const images = folderImages[viewId] || [];
     const isActive = activeView === viewId;
     const isUserFolder = viewId !== 'all' && viewId !== 'favorites';
     const isDragging = draggingFolderId === viewId;
     const canDrop = isUserFolder && draggingFolderId && draggingFolderId !== viewId && !isDescendant(draggingFolderId, viewId);
-    
+
     return (
       <div
         draggable={isUserFolder}
@@ -212,26 +213,37 @@ export function Dashboard() {
         onDragOver={e => { if (isUserFolder && (canDrop || !draggingFolderId)) { e.preventDefault(); e.currentTarget.classList.add('folder-drag-over'); }}}
         onDragLeave={e => e.currentTarget.classList.remove('folder-drag-over')}
         onDrop={e => isUserFolder && handleScreenshotDrop(e, viewId)}
-        className={`flex-shrink-0 w-[150px] cursor-pointer transition-all duration-200
-          ${isActive ? 'ring-2 ring-[#161419] ring-offset-2 ring-offset-[#e9e6e4]' : 'hover:scale-[1.02]'}
+        className={`flex-shrink-0 w-[130px] cursor-pointer transition-all duration-200
+          ${isActive ? 'ring-2 ring-[#161419] ring-offset-2 ring-offset-[#e9e6e4]' : 'hover:shadow-md hover:-translate-y-0.5'}
           ${isDragging ? 'opacity-50' : ''}
           [&.folder-drag-over]:ring-2 [&.folder-drag-over]:ring-blue-500`}
       >
-        <div className="border border-[#94918f] overflow-hidden bg-[#e9e6e4] hover:border-[#161419] transition-colors">
+        <div className="border border-[#94918f] overflow-hidden bg-[#e9e6e4] hover:border-[#161419] transition-all">
           <div className="aspect-square overflow-hidden">
             {renderMosaic(images, icon)}
           </div>
-          <div className="p-1.5 border-t border-[#94918f]">
+          <div className="p-2 border-t border-[#94918f]">
             {editingFolderId === viewId ? (
               <input autoFocus value={editFolderName} onChange={e => setEditFolderName(e.target.value)}
                 onBlur={() => handleRenameFolder(viewId, editFolderName)}
                 onKeyDown={e => e.key === 'Enter' && handleRenameFolder(viewId, editFolderName)}
                 onClick={e => e.stopPropagation()}
-                className="bg-transparent border-b border-[#161419] outline-none text-[11px] font-medium w-full" />
+                className="bg-transparent border-b border-[#161419] outline-none text-[12px] font-medium w-full" />
             ) : (
-              <h3 className="text-[11px] font-medium text-[#161419] truncate">{name}</h3>
+              <>
+                {parentName ? (
+                  <div className="flex flex-col">
+                    <span className="text-[9px] text-[#161419] opacity-40 truncate">{parentName}</span>
+                    <h3 className="text-[12px] font-medium text-[#3b82f6] truncate flex items-center gap-1">
+                      <span className="text-[10px]">↳</span> {name}
+                    </h3>
+                  </div>
+                ) : (
+                  <h3 className="text-[12px] font-medium text-[#161419] truncate">{name}</h3>
+                )}
+              </>
             )}
-            <p className="text-[9px] text-[#161419] opacity-50">{count}{subCount ? ` • ${subCount} sub` : ''}</p>
+            <p className="text-[10px] text-[#161419] opacity-50 mt-0.5">{count}{subCount ? ` • ${subCount} sub` : ''}</p>
           </div>
         </div>
       </div>
@@ -247,6 +259,36 @@ export function Dashboard() {
             <Search size={16} className="text-[#161419] opacity-50 mr-2" />
             <input type="text" placeholder="Search..." value={searchInput} onChange={e => setSearchInput(e.target.value)} className="flex-1 bg-transparent border-none outline-none text-[#161419] text-sm placeholder:text-[#161419] placeholder:opacity-40" />
           </div>
+          <div className="relative">
+            <button onClick={() => setShowShortcutsMenu(!showShortcutsMenu)} className="flex items-center gap-1.5 px-3 py-2 border border-[#94918f] text-[#161419] text-xs font-medium hover:border-[#161419] transition-colors" title="Keyboard Shortcuts">
+              <Keyboard size={14} />
+            </button>
+            {showShortcutsMenu && (
+              <div className="absolute top-full right-0 mt-1 bg-[#e9e6e4] border border-[#161419] z-50 min-w-[280px] max-w-[320px]">
+                <div className="px-3 py-2 border-b border-[#94918f] bg-[#161419] text-[#e9e6e4]">
+                  <h3 className="text-xs font-semibold">Keyboard Shortcuts</h3>
+                </div>
+                <div className="p-3 space-y-2">
+                  <div className="flex justify-between items-center text-[10px]">
+                    <span className="text-[#161419]">Take Screenshot</span>
+                    <kbd className="px-2 py-0.5 bg-[#161419] text-[#e9e6e4] rounded text-[9px] font-mono">Cmd+Shift+S</kbd>
+                  </div>
+                  <div className="flex justify-between items-center text-[10px]">
+                    <span className="text-[#161419]">Open App</span>
+                    <kbd className="px-2 py-0.5 bg-[#161419] text-[#e9e6e4] rounded text-[9px] font-mono">Cmd+Shift+A</kbd>
+                  </div>
+                  <div className="flex justify-between items-center text-[10px]">
+                    <span className="text-[#161419]">Refresh Gallery</span>
+                    <kbd className="px-2 py-0.5 bg-[#161419] text-[#e9e6e4] rounded text-[9px] font-mono">Cmd+R</kbd>
+                  </div>
+                  <div className="flex justify-between items-center text-[10px]">
+                    <span className="text-[#161419]">Drag to Move</span>
+                    <kbd className="px-2 py-0.5 bg-[#161419] text-[#e9e6e4] rounded text-[9px] font-mono">Click+Drag</kbd>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
           <button onClick={handleCapture} className="flex items-center gap-1.5 px-3 py-2 bg-[#161419] text-[#e9e6e4] text-xs font-medium hover:bg-[#2a2730] transition-colors"><Camera size={14} />CAPTURE</button>
           <div className="relative">
             <button onClick={() => setShowImportMenu(!showImportMenu)} className="flex items-center gap-1.5 px-3 py-2 border border-[#161419] text-[#161419] text-xs font-medium hover:bg-[#161419] hover:text-[#e9e6e4] transition-colors"><Upload size={14} />IMPORT<ChevronDown size={12} /></button>
@@ -256,23 +298,34 @@ export function Dashboard() {
       </div>
 
       {/* Folders Section */}
-      <div className="px-4 py-3 border-b border-[#94918f]">
-        <div className="flex items-center justify-between mb-2">
-          <h2 className="text-[10px] font-medium uppercase tracking-wider text-[#161419] opacity-60">FOLDERS</h2>
-          <button onClick={() => setIsCreatingFolder(true)} className="flex items-center gap-1 px-2 py-0.5 text-[9px] font-medium text-[#161419] border border-[#94918f] hover:border-[#161419] hover:bg-[#161419] hover:text-[#e9e6e4] transition-colors"><Plus size={10} />NEW</button>
+      <div className="px-6 py-4 border-b border-[#94918f]">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-[11px] font-semibold uppercase tracking-wider text-[#161419] opacity-70">FOLDERS</h2>
+          <button onClick={() => setIsCreatingFolder(true)} className="flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-medium text-[#161419] border border-[#94918f] hover:border-[#161419] hover:bg-[#161419] hover:text-[#e9e6e4] transition-colors"><Plus size={11} />NEW</button>
         </div>
-        <div className="grid grid-cols-[repeat(auto-fill,150px)] gap-3 max-h-[340px] overflow-y-auto">
-          <FolderCard viewId="all" name="All" count={allCount} icon={<Camera size={18} className="text-[#94918f]" />} />
-          <FolderCard viewId="favorites" name="Favorites" count={favCount} icon={<Star size={18} className="text-[#94918f]" />} />
-          {folders.map(f => (
-            <FolderCard key={f.id} viewId={f.id} name={f.parent_id ? `↳ ${f.name}` : f.name} count={f.screenshot_count} icon={<Folder size={18} className={f.parent_id ? "text-[#3b82f6]" : "text-[#94918f]"} />} subCount={getChildFolders(f.id).length || undefined} />
-          ))}
+        <div className="flex gap-4 overflow-x-auto pb-2 -mx-2 px-2 scrollbar-thin scrollbar-thumb-[#94918f] scrollbar-track-transparent">
+          <FolderCard viewId="all" name="All" count={allCount} icon={<Camera size={20} className="text-[#94918f]" />} />
+          <FolderCard viewId="favorites" name="Favorites" count={favCount} icon={<Star size={20} className="text-[#94918f]" />} />
+          {folders.map(f => {
+            const parentFolder = f.parent_id ? folders.find(pf => pf.id === f.parent_id) : null;
+            return (
+              <FolderCard
+                key={f.id}
+                viewId={f.id}
+                name={f.name}
+                count={f.screenshot_count}
+                icon={<Folder size={20} className={f.parent_id ? "text-[#3b82f6]" : "text-[#94918f]"} />}
+                subCount={getChildFolders(f.id).length || undefined}
+                parentName={parentFolder?.name}
+              />
+            );
+          })}
           {isCreatingFolder && (
-            <div className="flex-shrink-0 w-[150px]">
-              <div className="border border-[#161419] overflow-hidden bg-[#e9e6e4]">
-                <div className="aspect-square bg-[#161419] flex items-center justify-center"><Folder size={18} className="text-[#94918f]" /></div>
-                <form onSubmit={handleCreateFolder} className="p-1.5 border-t border-[#94918f]">
-                  <input autoFocus type="text" placeholder="Name..." value={newFolderName} onChange={e => setNewFolderName(e.target.value)} onBlur={() => { if (!newFolderName.trim()) setIsCreatingFolder(false); }} className="bg-transparent border-b border-[#161419] outline-none text-[11px] font-medium w-full" />
+            <div className="flex-shrink-0 w-[130px]">
+              <div className="border border-[#161419] overflow-hidden bg-[#e9e6e4] shadow-sm">
+                <div className="aspect-square bg-[#161419] flex items-center justify-center"><Folder size={20} className="text-[#94918f]" /></div>
+                <form onSubmit={handleCreateFolder} className="p-2 border-t border-[#94918f]">
+                  <input autoFocus type="text" placeholder="Name..." value={newFolderName} onChange={e => setNewFolderName(e.target.value)} onBlur={() => { if (!newFolderName.trim()) setIsCreatingFolder(false); }} className="bg-transparent border-b border-[#161419] outline-none text-[12px] font-medium w-full" />
                 </form>
               </div>
             </div>
@@ -289,9 +342,10 @@ export function Dashboard() {
             <button onClick={() => setRefreshKey(k => k + 1)} className="px-2 py-1 border border-[#94918f] text-[#161419] text-[10px] hover:border-[#161419] hover:bg-[#161419] hover:text-[#e9e6e4] transition-colors">↻</button>
           </div>
         </div>
-        <Gallery searchQuery={searchQuery} activeView={activeView} sortOrder={sortOrder} processingOCR={processingOCR} refreshTrigger={refreshKey} />
+        <Gallery searchQuery={searchQuery} activeView={activeView} sortOrder={sortOrder} processingOCR={processingOCR} refreshTrigger={refreshKey} onDropSuccess={triggerRefresh} />
       </div>
 
+      {showShortcutsMenu && <div className="fixed inset-0 z-40" onClick={() => setShowShortcutsMenu(false)} />}
       {showImportMenu && <div className="fixed inset-0 z-40" onClick={() => setShowImportMenu(false)} />}
       {contextMenu && <><div className="fixed inset-0 z-50" onClick={() => setContextMenu(null)} /><div className="fixed z-50 bg-[#e9e6e4] border border-[#161419]" style={{ top: contextMenu.y, left: contextMenu.x }}><button onClick={() => { const f = folders.find(x => x.id === contextMenu.folderId); if (f) { setEditingFolderId(f.id); setEditFolderName(f.name); } setContextMenu(null); }} className="w-full px-3 py-2 text-left text-xs text-[#161419] hover:bg-[#161419] hover:text-[#e9e6e4]">Rename</button><button onClick={() => { handleDeleteFolder(contextMenu.folderId); setContextMenu(null); }} className="w-full px-3 py-2 text-left text-xs text-red-600 hover:bg-red-600 hover:text-white flex items-center gap-2 border-t border-[#94918f]"><Trash2 size={12} />Delete</button></div></>}
     </div>
