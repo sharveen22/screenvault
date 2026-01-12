@@ -1683,6 +1683,86 @@ ipcMain.handle('db:get-info', async () => {
   }
 });
 
+/* ====================== Folder Helpers ====================== */
+// Get the filesystem path for a folder (builds path from parent chain)
+function getFolderPath(folderId) {
+  if (!folderId) return screenshotsDir();
+  
+  const db = getDatabase();
+  const folder = db.prepare('SELECT id, name, parent_id FROM folders WHERE id = ?').get(folderId);
+  if (!folder) return screenshotsDir();
+  
+  // Build path by traversing up the parent chain
+  const pathParts = [folder.name];
+  let currentParentId = folder.parent_id;
+  
+  while (currentParentId) {
+    const parent = db.prepare('SELECT id, name, parent_id FROM folders WHERE id = ?').get(currentParentId);
+    if (!parent) break;
+    pathParts.unshift(parent.name);
+    currentParentId = parent.parent_id;
+  }
+  
+  return path.join(screenshotsDir(), ...pathParts);
+}
+
+// Ensure folder exists on filesystem
+function ensureFolderOnDisk(folderId) {
+  const folderPath = getFolderPath(folderId);
+  if (!fs.existsSync(folderPath)) {
+    fs.mkdirSync(folderPath, { recursive: true });
+    sendLog(`Created folder on disk: ${folderPath}`);
+  }
+  return folderPath;
+}
+
+// Move all screenshots in a folder to new path
+function moveScreenshotsToNewPath(folderId, newFolderPath) {
+  const db = getDatabase();
+  const screenshots = db.prepare('SELECT id, storage_path, file_name FROM screenshots WHERE folder_id = ?').all(folderId);
+  
+  for (const screenshot of screenshots) {
+    const oldPath = screenshot.storage_path;
+    const newPath = path.join(newFolderPath, screenshot.file_name);
+    
+    if (fs.existsSync(oldPath) && oldPath !== newPath) {
+      try {
+        // Ensure unique filename
+        let finalPath = newPath;
+        if (fs.existsSync(newPath)) {
+          const ext = path.extname(screenshot.file_name);
+          const base = path.basename(screenshot.file_name, ext);
+          finalPath = path.join(newFolderPath, `${base}_${Date.now()}${ext}`);
+        }
+        
+        fs.renameSync(oldPath, finalPath);
+        db.prepare('UPDATE screenshots SET storage_path = ?, file_name = ? WHERE id = ?')
+          .run(finalPath, path.basename(finalPath), screenshot.id);
+        sendLog(`Moved screenshot: ${oldPath} -> ${finalPath}`);
+      } catch (e) {
+        sendLog(`Failed to move screenshot ${screenshot.id}: ${e}`, 'error');
+      }
+    }
+  }
+}
+
+// Recursively move subfolders and their contents
+function moveSubfoldersRecursively(parentId, newParentPath) {
+  const db = getDatabase();
+  const subfolders = db.prepare('SELECT id, name FROM folders WHERE parent_id = ?').all(parentId);
+  
+  for (const subfolder of subfolders) {
+    const newSubfolderPath = path.join(newParentPath, subfolder.name);
+    ensureDir(newSubfolderPath);
+    
+    // Move screenshots in this subfolder
+    moveScreenshotsToNewPath(subfolder.id, newSubfolderPath);
+    
+    // Recursively handle nested subfolders
+    moveSubfoldersRecursively(subfolder.id, newSubfolderPath);
+  }
+}
+
 /* ====================== Folder Handlers ====================== */
 ipcMain.handle('folder:list', async () => {
   try {
@@ -1694,11 +1774,14 @@ ipcMain.handle('folder:list', async () => {
       const insert = db.prepare('INSERT INTO folders (id, name, icon, color) VALUES (?, ?, ?, ?)');
       defaults.forEach((name, i) => {
         const colors = ['#6366f1', '#10b981', '#f59e0b'];
-        insert.run(crypto.randomUUID(), name, 'folder', colors[i % colors.length]);
+        const id = crypto.randomUUID();
+        insert.run(id, name, 'folder', colors[i % colors.length]);
+        // Create folder on disk
+        ensureFolderOnDisk(id);
       });
     }
 
-    // Get folders with screenshot counts
+    // Get folders with screenshot counts and parent info
     const folders = db.prepare(`
       SELECT f.*, COUNT(s.id) as screenshot_count 
       FROM folders f 
@@ -1712,12 +1795,17 @@ ipcMain.handle('folder:list', async () => {
   }
 });
 
-ipcMain.handle('folder:create', async (_e, name) => {
+ipcMain.handle('folder:create', async (_e, name, parentId = null) => {
   try {
     const db = getDatabase();
     const id = crypto.randomUUID();
-    db.prepare('INSERT INTO folders (id, name) VALUES (?, ?)').run(id, name);
-    return { data: { id, name }, error: null };
+    db.prepare('INSERT INTO folders (id, name, parent_id) VALUES (?, ?, ?)').run(id, name, parentId);
+    
+    // Create folder on disk
+    const folderPath = ensureFolderOnDisk(id);
+    sendLog(`Created folder: ${name} at ${folderPath}`);
+    
+    return { data: { id, name, parent_id: parentId }, error: null };
   } catch (e) {
     return { data: null, error: e.message };
   }
@@ -1726,7 +1814,42 @@ ipcMain.handle('folder:create', async (_e, name) => {
 ipcMain.handle('folder:rename', async (_e, { id, name }) => {
   try {
     const db = getDatabase();
+    const folder = db.prepare('SELECT name, parent_id FROM folders WHERE id = ?').get(id);
+    if (!folder) return { data: null, error: 'Folder not found' };
+    
+    const oldPath = getFolderPath(id);
+    
+    // Update database
     db.prepare('UPDATE folders SET name = ? WHERE id = ?').run(name, id);
+    
+    // Rename folder on disk
+    const newPath = getFolderPath(id);
+    if (fs.existsSync(oldPath) && oldPath !== newPath) {
+      try {
+        fs.renameSync(oldPath, newPath);
+        
+        // Update all screenshot paths in this folder and subfolders
+        const updateScreenshotPaths = (folderId, folderPath) => {
+          const screenshots = db.prepare('SELECT id, storage_path, file_name FROM screenshots WHERE folder_id = ?').all(folderId);
+          for (const s of screenshots) {
+            const newScreenshotPath = path.join(folderPath, s.file_name);
+            db.prepare('UPDATE screenshots SET storage_path = ? WHERE id = ?').run(newScreenshotPath, s.id);
+          }
+          
+          // Handle subfolders
+          const subfolders = db.prepare('SELECT id, name FROM folders WHERE parent_id = ?').all(folderId);
+          for (const sub of subfolders) {
+            updateScreenshotPaths(sub.id, path.join(folderPath, sub.name));
+          }
+        };
+        
+        updateScreenshotPaths(id, newPath);
+        sendLog(`Renamed folder: ${oldPath} -> ${newPath}`);
+      } catch (e) {
+        sendLog(`Failed to rename folder on disk: ${e}`, 'error');
+      }
+    }
+    
     return { data: true, error: null };
   } catch (e) {
     return { data: null, error: e.message };
@@ -1736,7 +1859,100 @@ ipcMain.handle('folder:rename', async (_e, { id, name }) => {
 ipcMain.handle('folder:delete', async (_e, id) => {
   try {
     const db = getDatabase();
+    const folderPath = getFolderPath(id);
+    
+    // Move screenshots to root folder (unassign from folder)
+    db.prepare('UPDATE screenshots SET folder_id = NULL WHERE folder_id = ?').run(id);
+    
+    // Recursively unassign screenshots from subfolders
+    const unassignSubfolders = (parentId) => {
+      const subfolders = db.prepare('SELECT id FROM folders WHERE parent_id = ?').all(parentId);
+      for (const sub of subfolders) {
+        db.prepare('UPDATE screenshots SET folder_id = NULL WHERE folder_id = ?').run(sub.id);
+        unassignSubfolders(sub.id);
+      }
+    };
+    unassignSubfolders(id);
+    
+    // Delete folder and subfolders from database (CASCADE should handle this)
     db.prepare('DELETE FROM folders WHERE id = ?').run(id);
+    
+    // Delete folder from disk (if empty after moving screenshots)
+    if (fs.existsSync(folderPath)) {
+      try {
+        fs.rmSync(folderPath, { recursive: true, force: true });
+        sendLog(`Deleted folder from disk: ${folderPath}`);
+      } catch (e) {
+        sendLog(`Failed to delete folder from disk: ${e}`, 'error');
+      }
+    }
+    
+    return { data: true, error: null };
+  } catch (e) {
+    return { data: null, error: e.message };
+  }
+});
+
+// Move folder into another folder (nesting)
+ipcMain.handle('folder:move', async (_e, { folderId, targetParentId }) => {
+  try {
+    const db = getDatabase();
+    
+    // Prevent moving folder into itself or its descendants
+    if (folderId === targetParentId) {
+      return { data: null, error: 'Cannot move folder into itself' };
+    }
+    
+    // Check if target is a descendant of the folder being moved
+    const isDescendant = (parentId, checkId) => {
+      if (!parentId) return false;
+      if (parentId === checkId) return true;
+      const parent = db.prepare('SELECT parent_id FROM folders WHERE id = ?').get(parentId);
+      return parent ? isDescendant(parent.parent_id, checkId) : false;
+    };
+    
+    if (isDescendant(targetParentId, folderId)) {
+      return { data: null, error: 'Cannot move folder into its own subfolder' };
+    }
+    
+    const folder = db.prepare('SELECT name FROM folders WHERE id = ?').get(folderId);
+    if (!folder) return { data: null, error: 'Folder not found' };
+    
+    const oldPath = getFolderPath(folderId);
+    
+    // Update parent in database
+    db.prepare('UPDATE folders SET parent_id = ? WHERE id = ?').run(targetParentId, folderId);
+    
+    // Move folder on disk
+    const newPath = getFolderPath(folderId);
+    if (fs.existsSync(oldPath) && oldPath !== newPath) {
+      try {
+        ensureDir(path.dirname(newPath));
+        fs.renameSync(oldPath, newPath);
+        
+        // Update all screenshot paths recursively
+        const updatePaths = (fId, fPath) => {
+          const screenshots = db.prepare('SELECT id, file_name FROM screenshots WHERE folder_id = ?').all(fId);
+          for (const s of screenshots) {
+            const newScreenshotPath = path.join(fPath, s.file_name);
+            db.prepare('UPDATE screenshots SET storage_path = ? WHERE id = ?').run(newScreenshotPath, s.id);
+          }
+          const subfolders = db.prepare('SELECT id, name FROM folders WHERE parent_id = ?').all(fId);
+          for (const sub of subfolders) {
+            updatePaths(sub.id, path.join(fPath, sub.name));
+          }
+        };
+        updatePaths(folderId, newPath);
+        
+        sendLog(`Moved folder: ${oldPath} -> ${newPath}`);
+      } catch (e) {
+        sendLog(`Failed to move folder on disk: ${e}`, 'error');
+        // Rollback database change
+        db.prepare('UPDATE folders SET parent_id = ? WHERE id = ?').run(null, folderId);
+        return { data: null, error: `Failed to move folder: ${e.message}` };
+      }
+    }
+    
     return { data: true, error: null };
   } catch (e) {
     return { data: null, error: e.message };
@@ -1746,7 +1962,35 @@ ipcMain.handle('folder:delete', async (_e, id) => {
 ipcMain.handle('screenshot:move', async (_e, { screenshotId, folderId }) => {
   try {
     const db = getDatabase();
-    db.prepare('UPDATE screenshots SET folder_id = ? WHERE id = ?').run(folderId, screenshotId);
+    const screenshot = db.prepare('SELECT storage_path, file_name FROM screenshots WHERE id = ?').get(screenshotId);
+    if (!screenshot) return { data: null, error: 'Screenshot not found' };
+    
+    const oldPath = screenshot.storage_path;
+    const newFolderPath = folderId ? ensureFolderOnDisk(folderId) : screenshotsDir();
+    let newPath = path.join(newFolderPath, screenshot.file_name);
+    
+    // Handle filename conflicts
+    if (fs.existsSync(newPath) && oldPath !== newPath) {
+      const ext = path.extname(screenshot.file_name);
+      const base = path.basename(screenshot.file_name, ext);
+      newPath = path.join(newFolderPath, `${base}_${Date.now()}${ext}`);
+    }
+    
+    // Move file on disk
+    if (fs.existsSync(oldPath) && oldPath !== newPath) {
+      try {
+        fs.renameSync(oldPath, newPath);
+        sendLog(`Moved screenshot: ${oldPath} -> ${newPath}`);
+      } catch (e) {
+        sendLog(`Failed to move screenshot file: ${e}`, 'error');
+        return { data: null, error: `Failed to move file: ${e.message}` };
+      }
+    }
+    
+    // Update database
+    db.prepare('UPDATE screenshots SET folder_id = ?, storage_path = ?, file_name = ? WHERE id = ?')
+      .run(folderId, newPath, path.basename(newPath), screenshotId);
+    
     return { data: true, error: null };
   } catch (e) {
     return { data: null, error: e.message };

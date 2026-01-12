@@ -1,23 +1,35 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-import { useElectronScreenshots } from "../hooks/useElectronScreenshots";
-import { Camera, Search, Folder, Star, Trash2, Plus, Upload, FolderOpen } from "lucide-react";
-import { Gallery } from "./Gallery";
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useElectronScreenshots } from '../hooks/useElectronScreenshots';
+import { db } from '../lib/database';
+import { Camera, Search, Folder, Star, Plus, Upload, FolderOpen, ChevronDown, Trash2 } from 'lucide-react';
+import { Gallery } from './Gallery';
+
+interface FolderData {
+  id: string;
+  name: string;
+  parent_id: string | null;
+  screenshot_count: number;
+}
 
 export function Dashboard() {
   const { takeScreenshot } = useElectronScreenshots();
-  const [searchInput, setSearchInput] = useState("");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [activeView, setActiveView] = useState<"all" | "favorites" | "recent" | "archived" | string>("all");
+  const [searchInput, setSearchInput] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeView, setActiveView] = useState<'all' | 'favorites' | string>('all');
   const [refreshKey, setRefreshKey] = useState(0);
-  const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
+  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
   const [processingOCR, setProcessingOCR] = useState<Set<string>>(new Set());
-  const [folders, setFolders] = useState<any[]>([]);
+  const [folders, setFolders] = useState<FolderData[]>([]);
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
-  const [newFolderName, setNewFolderName] = useState("");
+  const [newFolderName, setNewFolderName] = useState('');
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; folderId: string } | null>(null);
   const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
-  const [editFolderName, setEditFolderName] = useState("");
-  const [screenVaultPath, setScreenVaultPath] = useState<string>("");
+  const [editFolderName, setEditFolderName] = useState('');
+  const [showImportMenu, setShowImportMenu] = useState(false);
+  const [allCount, setAllCount] = useState(0);
+  const [favCount, setFavCount] = useState(0);
+  const [draggingFolderId, setDraggingFolderId] = useState<string | null>(null);
+  const [folderImages, setFolderImages] = useState<Record<string, string[]>>({});
 
   useEffect(() => {
     const timer = setTimeout(() => setSearchQuery(searchInput), 300);
@@ -31,18 +43,82 @@ export function Dashboard() {
     if (data) setFolders(data);
   }, []);
 
-  useEffect(() => {
-    loadFolders();
-    (window.electronAPI as any)?.import?.getScreenVaultPath?.().then((r: any) => {
-      if (r?.data) setScreenVaultPath(r.data);
-    });
-  }, [loadFolders]);
+  const loadScreenshotsAndImages = useCallback(async () => {
+    console.log('[Dashboard] loadScreenshotsAndImages starting...');
+    try {
+      // Use db.from like Gallery does
+      const result = await db.from('screenshots').select({
+        orderBy: { column: 'created_at', direction: 'desc' },
+        limit: 1000,
+      }) as any;
+      
+      if (!result?.data) {
+        console.log('[Dashboard] No screenshots data');
+        return;
+      }
+      
+      const screenshots = result.data;
+      console.log('[Dashboard] Got', screenshots.length, 'screenshots');
+      
+      setAllCount(screenshots.length);
+      setFavCount(screenshots.filter((s: any) => s.is_favorite).length);
+      
+      // Load images for folder previews
+      const api = window.electronAPI as any;
+      if (!api?.file?.read) {
+        console.log('[Dashboard] No file.read API');
+        return;
+      }
+      
+      const loadImage = async (path: string): Promise<string> => {
+        try {
+          const res = await api.file.read(path);
+          if (res?.data) return `data:image/png;base64,${res.data}`;
+        } catch (e) {
+          console.error('[Dashboard] Image load error:', e);
+        }
+        return '';
+      };
+      
+      const imageMap: Record<string, string[]> = {};
+      
+      // All - first 4
+      console.log('[Dashboard] Loading All images...');
+      const allPaths = screenshots.slice(0, 4).map((s: any) => s.storage_path);
+      const allImgs = await Promise.all(allPaths.map(loadImage));
+      imageMap['all'] = allImgs.filter(Boolean);
+      console.log('[Dashboard] All images:', imageMap['all'].length);
+      
+      // Favorites - first 4
+      const favScreenshots = screenshots.filter((s: any) => s.is_favorite).slice(0, 4);
+      const favImgs = await Promise.all(favScreenshots.map((s: any) => loadImage(s.storage_path)));
+      imageMap['favorites'] = favImgs.filter(Boolean);
+      
+      // By folder
+      const folderIds = [...new Set(screenshots.map((s: any) => s.folder_id).filter(Boolean))] as string[];
+      for (const fid of folderIds) {
+        const folderScreenshots = screenshots.filter((s: any) => s.folder_id === fid).slice(0, 4);
+        const fImgs = await Promise.all(folderScreenshots.map((s: any) => loadImage(s.storage_path)));
+        imageMap[fid] = fImgs.filter(Boolean);
+      }
+      
+      console.log('[Dashboard] Loaded images for folders:', Object.keys(imageMap));
+      setFolderImages(imageMap);
+    } catch (e) {
+      console.error('[Dashboard] loadScreenshotsAndImages error:', e);
+    }
+  }, []);
+
+  useEffect(() => { 
+    loadFolders(); 
+    loadScreenshotsAndImages(); 
+  }, [loadFolders, loadScreenshotsAndImages]);
 
   const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const triggerRefresh = useCallback(() => {
     if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
-    refreshTimeoutRef.current = setTimeout(() => setRefreshKey(k => k + 1), 200);
-  }, []);
+    refreshTimeoutRef.current = setTimeout(() => { setRefreshKey(k => k + 1); loadScreenshotsAndImages(); loadFolders(); }, 200);
+  }, [loadScreenshotsAndImages, loadFolders]);
 
   useEffect(() => {
     const api = window.electronAPI as any;
@@ -56,90 +132,168 @@ export function Dashboard() {
       triggerRefresh();
     });
     const onLocalSaved = () => triggerRefresh();
-    const onOcrComplete = (e: Event) => {
-      const d = (e as CustomEvent).detail;
-      if (d?.screenshotId) setProcessingOCR(prev => { const n = new Set(prev); n.delete(d.screenshotId); return n; });
-      triggerRefresh();
-    };
-    const onOcrStart = (e: Event) => {
-      const d = (e as CustomEvent).detail;
-      if (d?.screenshotId) setProcessingOCR(prev => new Set(prev).add(d.screenshotId));
-    };
-    window.addEventListener("screenshot-saved-local", onLocalSaved);
-    window.addEventListener("ocr-complete", onOcrComplete);
-    window.addEventListener("ocr-start", onOcrStart);
-    return () => {
-      off1?.(); off2?.(); off3?.(); off4?.(); off5?.();
-      window.removeEventListener("screenshot-saved-local", onLocalSaved);
-      window.removeEventListener("ocr-complete", onOcrComplete);
-      window.removeEventListener("ocr-start", onOcrStart);
-      if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
-    };
+    const onOcrComplete = (e: Event) => { const d = (e as CustomEvent).detail; if (d?.screenshotId) setProcessingOCR(prev => { const n = new Set(prev); n.delete(d.screenshotId); return n; }); triggerRefresh(); };
+    const onOcrStart = (e: Event) => { const d = (e as CustomEvent).detail; if (d?.screenshotId) setProcessingOCR(prev => new Set(prev).add(d.screenshotId)); };
+    window.addEventListener('screenshot-saved-local', onLocalSaved);
+    window.addEventListener('ocr-complete', onOcrComplete);
+    window.addEventListener('ocr-start', onOcrStart);
+    return () => { off1?.(); off2?.(); off3?.(); off4?.(); off5?.(); window.removeEventListener('screenshot-saved-local', onLocalSaved); window.removeEventListener('ocr-complete', onOcrComplete); window.removeEventListener('ocr-start', onOcrStart); if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current); };
   }, [triggerRefresh, loadFolders]);
 
-  const handleImportFiles = async () => { const r = await (window.electronAPI as any)?.import?.files?.(); if (r?.data?.length > 0) triggerRefresh(); };
-  const handleCapture = async () => { await takeScreenshot(); };
-  const handleImportFolder = async () => { const r = await (window.electronAPI as any)?.import?.folder?.(); if (r?.data) { loadFolders(); triggerRefresh(); } };
-  const handleCreateFolder = async (e: React.FormEvent) => { e.preventDefault(); if (!newFolderName.trim()) return; await (window.electronAPI as any)?.folder?.create?.(newFolderName); setNewFolderName(""); setIsCreatingFolder(false); loadFolders(); };
+  const handleImportFiles = async () => { setShowImportMenu(false); const result = await (window.electronAPI as any)?.import?.files?.(); if (result?.data?.length > 0) triggerRefresh(); };
+  const handleImportFolder = async () => { setShowImportMenu(false); const result = await (window.electronAPI as any)?.import?.folder?.(); if (result?.data) { loadFolders(); triggerRefresh(); } };
+  const handleCapture = async () => { try { await takeScreenshot(); } catch (err) { console.error('[Dashboard] takeScreenshot error:', err); } };
+  const handleCreateFolder = async (e: React.FormEvent) => { e.preventDefault(); if (!newFolderName.trim()) return; await (window.electronAPI as any)?.folder?.create?.(newFolderName, null); setNewFolderName(''); setIsCreatingFolder(false); loadFolders(); };
   const handleRenameFolder = async (id: string, newName: string) => { if (!newName.trim()) { setEditingFolderId(null); return; } await (window.electronAPI as any)?.folder?.rename?.(id, newName); setEditingFolderId(null); loadFolders(); };
-  const handleDeleteFolder = async (id: string) => { const f = folders.find(x => x.id === id); if (f && window.confirm("Delete " + f.name + "?")) { await (window.electronAPI as any)?.folder?.delete?.(id); if (activeView === id) setActiveView("all"); loadFolders(); } };
-  const handleDrop = async (e: React.DragEvent, folderId: string) => { e.preventDefault(); const sid = e.dataTransfer.getData("text/plain"); if (sid) { await (window.electronAPI as any)?.folder?.moveScreenshot?.(sid, folderId); loadFolders(); } };
-  const shortcuts = [{ keys: ["⌘", "Shift", "S"], label: "Take Screenshot" }, { keys: ["⌘", "Shift", "A"], label: "Show App" }];
+  const handleDeleteFolder = async (id: string) => { const folder = folders.find(f => f.id === id); if (folder && window.confirm(`Delete "${folder.name}"?`)) { await (window.electronAPI as any)?.folder?.delete?.(id); if (activeView === id) setActiveView('all'); loadFolders(); triggerRefresh(); } };
+  
+  const handleScreenshotDrop = async (e: React.DragEvent, folderId: string | null) => {
+    e.preventDefault(); e.stopPropagation(); e.currentTarget.classList.remove('folder-drag-over');
+    const dataType = e.dataTransfer.getData('application/x-drag-type');
+    const data = e.dataTransfer.getData('text/plain');
+    if (dataType === 'folder') {
+      if (data && data !== folderId) { const result = await (window.electronAPI as any)?.folder?.move?.(data, folderId); if (result?.error) alert(result.error); else { loadFolders(); triggerRefresh(); } }
+    } else { if (data) { await (window.electronAPI as any)?.folder?.moveScreenshot?.(data, folderId); loadFolders(); triggerRefresh(); } }
+    setDraggingFolderId(null);
+  };
+  const handleFolderDragStart = (e: React.DragEvent, folderId: string) => { e.dataTransfer.setData('text/plain', folderId); e.dataTransfer.setData('application/x-drag-type', 'folder'); e.dataTransfer.effectAllowed = 'move'; setDraggingFolderId(folderId); };
+  const handleFolderDragEnd = () => { setDraggingFolderId(null); };
+  const isDescendant = (folderId: string, potentialAncestorId: string): boolean => { const folder = folders.find(f => f.id === folderId); if (!folder || !folder.parent_id) return false; if (folder.parent_id === potentialAncestorId) return true; return isDescendant(folder.parent_id, potentialAncestorId); };
 
-  return (
-    <>
-      <style dangerouslySetInnerHTML={{ __html: "* { margin: 0; padding: 0; box-sizing: border-box; } .blog-container { background-color: #e9e6e4; width: 100%; display: grid; height: 100vh; overflow: hidden; grid-template-columns: 20% 80%; padding: 40px 20px; } .blog-part { padding: 0 20px; } .blog-part:not(:last-child) { border-right: 1px solid #94918f; } .blog-menu { font-size: 14px; color: #161419; display: flex; align-items: center; cursor: pointer; padding: 6px 0; } .blog-menu:hover { opacity: 0.7; } .blog-menu + .blog-menu { margin-top: 12px; } .blog-menu.active { font-weight: 600; } .blog-header-container { overflow-y: auto; height: 100%; display: flex; flex-direction: column; border-right: 1px solid #94918f; padding-top: 20px; }" }} />
-      <div className="blog-container">
-        <div className="blog-part blog-header-container">
-          <div style={{ marginBottom: 40 }}>
-            <div className="blog-menu" onClick={handleCapture}><Camera size={20} style={{ marginRight: 10 }} />Capture</div>
-            <div className="blog-menu" onClick={handleImportFiles} style={{ marginTop: 12 }}><Upload size={20} style={{ marginRight: 10 }} />Import Files</div>
-            <div className="blog-menu" onClick={handleImportFolder} style={{ marginTop: 12 }}><FolderOpen size={20} style={{ marginRight: 10 }} />Import Folder</div>
+  const getBreadcrumb = () => {
+    if (activeView === 'all') return 'All Screenshots';
+    if (activeView === 'favorites') return 'Favorites';
+    const folder = folders.find(f => f.id === activeView);
+    if (!folder) return 'Screenshots';
+    const path: string[] = [folder.name];
+    let currentParentId = folder.parent_id;
+    while (currentParentId) { const parent = folders.find(f => f.id === currentParentId); if (!parent) break; path.unshift(parent.name); currentParentId = parent.parent_id; }
+    return path.join(' > ');
+  };
+
+  const rootFolders = folders.filter(f => !f.parent_id);
+  const getChildFolders = (parentId: string) => folders.filter(f => f.parent_id === parentId);
+
+  // Mosaic renderer
+  const renderMosaic = (images: string[], fallbackIcon: React.ReactNode) => {
+    if (!images || images.length === 0) {
+      return <div className="w-full h-full flex items-center justify-center bg-[#161419]">{fallbackIcon}</div>;
+    }
+    if (images.length === 1) {
+      return <img src={images[0]} alt="" className="w-full h-full object-cover" />;
+    }
+    return (
+      <div className="grid grid-cols-2 grid-rows-2 w-full h-full gap-px bg-[#161419]">
+        {[0, 1, 2, 3].map(i => (
+          <div key={i} className="overflow-hidden bg-[#2a2730]">
+            {images[i] && <img src={images[i]} alt="" className="w-full h-full object-cover" />}
           </div>
-          <div style={{ marginBottom: 40 }}>
-            <div className={"blog-menu " + (activeView === "all" ? "active" : "")} onClick={() => setActiveView("all")}><Camera size={20} style={{ marginRight: 10 }} />All Screenshots</div>
-            <div className={"blog-menu " + (activeView === "favorites" ? "active" : "")} onClick={() => setActiveView("favorites")}><Star size={20} style={{ marginRight: 10 }} />Favorites</div>
+        ))}
+      </div>
+    );
+  };
+
+  // Folder card
+  const FolderCard = ({ viewId, name, count, icon, subCount }: { viewId: string, name: string, count: number, icon: React.ReactNode, subCount?: number }) => {
+    const images = folderImages[viewId] || [];
+    const isActive = activeView === viewId;
+    const isUserFolder = viewId !== 'all' && viewId !== 'favorites';
+    const isDragging = draggingFolderId === viewId;
+    const canDrop = isUserFolder && draggingFolderId && draggingFolderId !== viewId && !isDescendant(draggingFolderId, viewId);
+    
+    return (
+      <div
+        draggable={isUserFolder}
+        onDragStart={(e) => isUserFolder && handleFolderDragStart(e, viewId)}
+        onDragEnd={handleFolderDragEnd}
+        onClick={() => setActiveView(viewId)}
+        onDoubleClick={() => isUserFolder && (setEditingFolderId(viewId), setEditFolderName(name))}
+        onContextMenu={e => { if (isUserFolder) { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, folderId: viewId }); }}}
+        onDragOver={e => { if (isUserFolder && (canDrop || !draggingFolderId)) { e.preventDefault(); e.currentTarget.classList.add('folder-drag-over'); }}}
+        onDragLeave={e => e.currentTarget.classList.remove('folder-drag-over')}
+        onDrop={e => isUserFolder && handleScreenshotDrop(e, viewId)}
+        className={`flex-shrink-0 w-[110px] cursor-pointer transition-all duration-200
+          ${isActive ? 'ring-2 ring-[#161419] ring-offset-2 ring-offset-[#e9e6e4]' : 'hover:scale-[1.02]'}
+          ${isDragging ? 'opacity-50' : ''}
+          [&.folder-drag-over]:ring-2 [&.folder-drag-over]:ring-blue-500`}
+      >
+        <div className="border border-[#94918f] overflow-hidden bg-[#e9e6e4] hover:border-[#161419] transition-colors">
+          <div className="aspect-square overflow-hidden">
+            {renderMosaic(images, icon)}
           </div>
-          <div style={{ marginTop: 20, paddingTop: 20, borderTop: "1px solid #94918f", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}>
-              <div style={{ fontSize: 12, letterSpacing: 1, textTransform: "uppercase", opacity: 0.6 }}>Folders</div>
-              <Plus size={18} style={{ cursor: "pointer", opacity: 0.7 }} onClick={() => setIsCreatingFolder(true)} />
-            </div>
-            {isCreatingFolder && <form onSubmit={handleCreateFolder} style={{ marginBottom: 16 }}><input autoFocus type="text" value={newFolderName} onChange={e => setNewFolderName(e.target.value)} onBlur={() => { if (!newFolderName.trim()) setIsCreatingFolder(false); }} className="w-full bg-transparent border-b border-black outline-none" placeholder="New folder" style={{ fontSize: 16, padding: "4px 0" }} /></form>}
-            <div style={{ flex: 1, overflowY: "auto", marginBottom: 20 }}>
-              {folders.map(f => (
-                <div key={f.id} className={"blog-menu " + (activeView === f.id ? "active" : "")} style={{ display: "flex", justifyContent: "space-between" }}
-                  onClick={() => { if (editingFolderId !== f.id) setActiveView(f.id); }}
-                  onDoubleClick={() => { setEditingFolderId(f.id); setEditFolderName(f.name); }}
-                  onContextMenu={e => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, folderId: f.id }); }}
-                  onDragOver={e => { e.preventDefault(); e.currentTarget.classList.add("bg-gray-200"); }}
-                  onDragLeave={e => e.currentTarget.classList.remove("bg-gray-200")}
-                  onDrop={e => { e.currentTarget.classList.remove("bg-gray-200"); handleDrop(e, f.id); }}>
-                  <div className="flex items-center"><Folder size={16} style={{ marginRight: 10 }} />{editingFolderId === f.id ? <input autoFocus className="bg-transparent border-b border-black outline-none w-24" value={editFolderName} onChange={e => setEditFolderName(e.target.value)} onBlur={() => handleRenameFolder(f.id, editFolderName)} onKeyDown={e => e.key === "Enter" && handleRenameFolder(f.id, editFolderName)} onClick={e => e.stopPropagation()} /> : f.name}</div>
-                  <span style={{ fontSize: 12, opacity: 0.5 }}>{f.screenshot_count || 0}</span>
-                </div>
-              ))}
-            </div>
+          <div className="p-1.5 border-t border-[#94918f]">
+            {editingFolderId === viewId ? (
+              <input autoFocus value={editFolderName} onChange={e => setEditFolderName(e.target.value)}
+                onBlur={() => handleRenameFolder(viewId, editFolderName)}
+                onKeyDown={e => e.key === 'Enter' && handleRenameFolder(viewId, editFolderName)}
+                onClick={e => e.stopPropagation()}
+                className="bg-transparent border-b border-[#161419] outline-none text-[11px] font-medium w-full" />
+            ) : (
+              <h3 className="text-[11px] font-medium text-[#161419] truncate">{name}</h3>
+            )}
+            <p className="text-[9px] text-[#161419] opacity-50">{count}{subCount ? ` • ${subCount} sub` : ''}</p>
           </div>
-          <div style={{ paddingTop: 20, borderTop: "1px solid #94918f" }}>
-            <div style={{ fontSize: 12, marginBottom: 12, letterSpacing: 1, textTransform: "uppercase", opacity: 0.6 }}>Shortcuts</div>
-            {shortcuts.map((s, i) => <div key={i} style={{ marginBottom: 8 }}><div style={{ fontSize: 11, opacity: 0.6, marginBottom: 3 }}>{s.label}</div><div style={{ display: "flex", gap: 3 }}>{s.keys.map((k, j) => <kbd key={j} style={{ backgroundColor: "#161419", color: "#e9e6e4", padding: "3px 6px", borderRadius: 3, fontSize: 10 }}>{k}</kbd>)}</div></div>)}
-            {screenVaultPath && <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid #94918f" }}><div style={{ fontSize: 12, marginBottom: 8, opacity: 0.6 }}>Local Folder</div><div onClick={() => (window.electronAPI as any)?.import?.openScreenVaultFolder?.()} style={{ fontSize: 11, opacity: 0.7, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}><FolderOpen size={14} /><span>Open in Finder</span></div></div>}
-          </div>
-        </div>
-        <div className="blog-header-container" style={{ borderRight: "none", padding: 40 }}>
-          <div style={{ marginBottom: 30 }}>
-            <h1 style={{ fontSize: 28, fontWeight: 700, fontFamily: "Space Grotesk", marginBottom: 12 }}>{activeView === "all" ? "All Screenshots" : activeView === "favorites" ? "Favorites" : folders.find(f => f.id === activeView)?.name || "Screenshots"}</h1>
-            <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
-              <select value={sortOrder} onChange={e => setSortOrder(e.target.value as any)} style={{ padding: "6px 12px", border: "1px solid #161419", background: "#e9e6e4", fontSize: 13 }}><option value="newest">Newest First</option><option value="oldest">Oldest First</option></select>
-              <button onClick={() => setRefreshKey(k => k + 1)} style={{ padding: "6px 12px", border: "1px solid #161419", background: "transparent", fontSize: 13 }}>↻ Reload</button>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", borderBottom: "1px solid #94918f", paddingBottom: 10 }}><Search size={20} style={{ marginRight: 10, opacity: 0.5 }} /><input type="text" placeholder="Search..." value={searchInput} onChange={e => setSearchInput(e.target.value)} style={{ background: "transparent", border: "none", outline: "none", fontSize: 18, width: "100%" }} /></div>
-          </div>
-          <Gallery searchQuery={searchQuery} activeView={activeView} sortOrder={sortOrder} processingOCR={processingOCR} refreshTrigger={refreshKey} />
         </div>
       </div>
-      {contextMenu && <><div className="fixed inset-0 z-50" onClick={() => setContextMenu(null)} /><div className="fixed z-50 bg-white rounded-lg shadow-xl border py-1 w-48" style={{ top: contextMenu.y, left: contextMenu.x }}><button onClick={() => { const f = folders.find(x => x.id === contextMenu.folderId); if (f) { setEditingFolderId(f.id); setEditFolderName(f.name); } setContextMenu(null); }} className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100">Rename</button><button onClick={() => { handleDeleteFolder(contextMenu.folderId); setContextMenu(null); }} className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"><Trash2 className="w-4 h-4" />Delete</button></div></>}
-    </>
+    );
+  };
+
+  return (
+    <div className="bg-[#e9e6e4] w-full h-screen overflow-hidden flex flex-col">
+      {/* Top Bar */}
+      <div className="p-3 border-b border-[#94918f]">
+        <div className="flex items-center gap-2">
+          <div className="flex-1 flex items-center border border-[#94918f] bg-[#e9e6e4] px-3 py-2 focus-within:border-[#161419]">
+            <Search size={16} className="text-[#161419] opacity-50 mr-2" />
+            <input type="text" placeholder="Search..." value={searchInput} onChange={e => setSearchInput(e.target.value)} className="flex-1 bg-transparent border-none outline-none text-[#161419] text-sm placeholder:text-[#161419] placeholder:opacity-40" />
+          </div>
+          <button onClick={handleCapture} className="flex items-center gap-1.5 px-3 py-2 bg-[#161419] text-[#e9e6e4] text-xs font-medium hover:bg-[#2a2730] transition-colors"><Camera size={14} />CAPTURE</button>
+          <div className="relative">
+            <button onClick={() => setShowImportMenu(!showImportMenu)} className="flex items-center gap-1.5 px-3 py-2 border border-[#161419] text-[#161419] text-xs font-medium hover:bg-[#161419] hover:text-[#e9e6e4] transition-colors"><Upload size={14} />IMPORT<ChevronDown size={12} /></button>
+            {showImportMenu && <div className="absolute top-full right-0 mt-1 bg-[#e9e6e4] border border-[#161419] z-50 min-w-[140px]"><button onClick={handleImportFiles} className="w-full px-3 py-2 text-left text-xs text-[#161419] hover:bg-[#161419] hover:text-[#e9e6e4] flex items-center gap-2"><Upload size={12} />Files</button><button onClick={handleImportFolder} className="w-full px-3 py-2 text-left text-xs text-[#161419] hover:bg-[#161419] hover:text-[#e9e6e4] flex items-center gap-2 border-t border-[#94918f]"><FolderOpen size={12} />Folder</button></div>}
+          </div>
+        </div>
+      </div>
+
+      {/* Folders Section */}
+      <div className="px-4 py-3 border-b border-[#94918f]">
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-[10px] font-medium uppercase tracking-wider text-[#161419] opacity-60">Collections</h2>
+          <button onClick={() => setIsCreatingFolder(true)} className="flex items-center gap-1 px-2 py-0.5 text-[9px] font-medium text-[#161419] border border-[#94918f] hover:border-[#161419] hover:bg-[#161419] hover:text-[#e9e6e4] transition-colors"><Plus size={10} />NEW</button>
+        </div>
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          <FolderCard viewId="all" name="All" count={allCount} icon={<Camera size={18} className="text-[#94918f]" />} />
+          <FolderCard viewId="favorites" name="Favorites" count={favCount} icon={<Star size={18} className="text-[#94918f]" />} />
+          {rootFolders.map(f => (
+            <FolderCard key={f.id} viewId={f.id} name={f.name} count={f.screenshot_count} icon={<Folder size={18} className="text-[#94918f]" />} subCount={getChildFolders(f.id).length || undefined} />
+          ))}
+          {isCreatingFolder && (
+            <div className="flex-shrink-0 w-[110px]">
+              <div className="border border-[#161419] overflow-hidden bg-[#e9e6e4]">
+                <div className="aspect-square bg-[#161419] flex items-center justify-center"><Folder size={18} className="text-[#94918f]" /></div>
+                <form onSubmit={handleCreateFolder} className="p-1.5 border-t border-[#94918f]">
+                  <input autoFocus type="text" placeholder="Name..." value={newFolderName} onChange={e => setNewFolderName(e.target.value)} onBlur={() => { if (!newFolderName.trim()) setIsCreatingFolder(false); }} className="bg-transparent border-b border-[#161419] outline-none text-[11px] font-medium w-full" />
+                </form>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="flex-1 overflow-y-auto p-4">
+        <div className="flex justify-between items-center mb-3">
+          <h1 className="text-base font-bold text-[#161419]">{getBreadcrumb()}</h1>
+          <div className="flex gap-1.5">
+            <select value={sortOrder} onChange={e => setSortOrder(e.target.value as any)} className="px-2 py-1 border border-[#94918f] bg-[#e9e6e4] text-[#161419] text-[10px] cursor-pointer hover:border-[#161419]"><option value="newest">Newest</option><option value="oldest">Oldest</option></select>
+            <button onClick={() => setRefreshKey(k => k + 1)} className="px-2 py-1 border border-[#94918f] text-[#161419] text-[10px] hover:border-[#161419] hover:bg-[#161419] hover:text-[#e9e6e4] transition-colors">↻</button>
+          </div>
+        </div>
+        <Gallery searchQuery={searchQuery} activeView={activeView} sortOrder={sortOrder} processingOCR={processingOCR} refreshTrigger={refreshKey} />
+      </div>
+
+      {showImportMenu && <div className="fixed inset-0 z-40" onClick={() => setShowImportMenu(false)} />}
+      {contextMenu && <><div className="fixed inset-0 z-50" onClick={() => setContextMenu(null)} /><div className="fixed z-50 bg-[#e9e6e4] border border-[#161419]" style={{ top: contextMenu.y, left: contextMenu.x }}><button onClick={() => { const f = folders.find(x => x.id === contextMenu.folderId); if (f) { setEditingFolderId(f.id); setEditFolderName(f.name); } setContextMenu(null); }} className="w-full px-3 py-2 text-left text-xs text-[#161419] hover:bg-[#161419] hover:text-[#e9e6e4]">Rename</button><button onClick={() => { handleDeleteFolder(contextMenu.folderId); setContextMenu(null); }} className="w-full px-3 py-2 text-left text-xs text-red-600 hover:bg-red-600 hover:text-white flex items-center gap-2 border-t border-[#94918f]"><Trash2 size={12} />Delete</button></div></>}
+    </div>
   );
 }

@@ -366,18 +366,7 @@ export function Gallery({ searchQuery, activeView, onDropSuccess, captureStatus,
 
   return (
     <>
-      <div className="mb-6 flex items-center justify-between">
-        <div className="">
-          <h2 className="text-2xl font-bold text-[#161419] mb-1 title-font">
-            {activeView.charAt(0).toUpperCase() + activeView.slice(1)} Screenshots
-          </h2>
-          <p className="text-[#161419] opacity-60 subtitle-font">
-            {screenshots.length} screenshots • {sortOrder === 'newest' ? 'Newest first' : 'Oldest first'}
-          </p>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
         {screenshots.map((screenshot) => (
           <ScreenshotCard
             key={screenshot.id}
@@ -495,57 +484,56 @@ function ScreenshotCard({
         </div>
       </div>
 
-      <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div className="absolute top-1 right-1 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
         <button
           onClick={(e) => onToggleFavorite(screenshot, e)}
-          className="p-1.5 bg-[#e9e6e4] border border-[#161419] text-[#161419] hover:bg-[#161419] hover:text-[#e9e6e4] transition-colors"
+          className="p-1 bg-[#e9e6e4] border border-[#161419] text-[#161419] hover:bg-[#161419] hover:text-[#e9e6e4] transition-colors"
         >
-          <Star className={`w-4 h-4 ${screenshot.is_favorite ? 'fill-[#161419]' : ''}`} />
+          <Star className={`w-3 h-3 ${screenshot.is_favorite ? 'fill-[#161419]' : ''}`} />
         </button>
         <button
           onClick={(e) => {
             e.stopPropagation();
             window.electronAPI?.file.reveal(screenshot.storage_path);
           }}
-          className="p-1.5 bg-[#e9e6e4] border border-[#161419] text-[#161419] hover:bg-[#161419] hover:text-[#e9e6e4] transition-colors"
+          className="p-1 bg-[#e9e6e4] border border-[#161419] text-[#161419] hover:bg-[#161419] hover:text-[#e9e6e4] transition-colors"
         >
-          <FolderOpen className="w-4 h-4" />
+          <FolderOpen className="w-3 h-3" />
         </button>
         <button
           onClick={(e) => onDelete(screenshot, e)}
-          className="p-1.5 bg-[#e9e6e4] border border-[#161419] text-[#161419] hover:bg-red-600 hover:text-white hover:border-red-600 transition-colors"
+          className="p-1 bg-[#e9e6e4] border border-[#161419] text-[#161419] hover:bg-red-600 hover:text-white hover:border-red-600 transition-colors"
         >
-          <Trash2 className="w-4 h-4" />
+          <Trash2 className="w-3 h-3" />
         </button>
       </div>
 
       {screenshot.is_favorite && !isLikelyProcessing && (
-        <div className="absolute top-2 left-2">
-          <Star className="w-4 h-4 fill-[#161419] text-[#161419]" />
+        <div className="absolute top-1 left-1">
+          <Star className="w-3 h-3 fill-[#161419] text-[#161419]" />
         </div>
       )}
 
       {isLikelyProcessing && (
-        <div className="absolute top-2 left-2 flex items-center gap-1.5 bg-[#161419] text-[#e9e6e4] px-2 py-1 text-xs">
-          <Loader2 className="w-3 h-3 animate-spin" />
-          <span>Processing...</span>
+        <div className="absolute top-1 left-1 flex items-center gap-1 bg-[#161419] text-[#e9e6e4] px-1.5 py-0.5 text-[10px]">
+          <Loader2 className="w-2.5 h-2.5 animate-spin" />
+          <span>Processing</span>
         </div>
       )}
 
-      <div className="p-3 border-t border-[#94918f] bg-[#e9e6e4]">
-        <h3 className="font-medium text-[#161419] truncate mb-1 subtitle-font text-sm">
+      <div className="p-2 border-t border-[#94918f] bg-[#e9e6e4]">
+        <h3 className="font-medium text-[#161419] truncate text-xs">
           {screenshot.file_name}
         </h3>
-        <div className="flex items-center justify-between text-xs text-[#161419] opacity-60 subtitle-font">
-          <span>{formatDate(screenshot.created_at)}</span>
-          <span>{(screenshot.file_size / 1024).toFixed(1)} KB</span>
+        <div className="text-[10px] text-[#161419] opacity-60 mt-0.5">
+          {formatDate(screenshot.created_at)}
         </div>
         {screenshot.custom_tags.length > 0 && (
-          <div className="flex gap-1 mt-2 flex-wrap">
-            {screenshot.custom_tags.slice(0, 3).map((tag) => (
+          <div className="flex gap-0.5 mt-1 flex-wrap">
+            {screenshot.custom_tags.slice(0, 2).map((tag) => (
               <span
                 key={tag}
-                className="text-[10px] px-1.5 py-0.5 border border-[#161419] text-[#161419] rounded-none uppercase tracking-wider"
+                className="text-[8px] px-1 py-0.5 border border-[#161419] text-[#161419] rounded-none uppercase tracking-wider"
               >
                 {tag}
               </span>
