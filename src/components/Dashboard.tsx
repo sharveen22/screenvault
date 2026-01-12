@@ -4,7 +4,7 @@ import { Camera, Search, Folder, Star, Trash2, Plus, Upload, FolderOpen } from "
 import { Gallery } from "./Gallery";
 
 export function Dashboard() {
-  useElectronScreenshots();
+  const { takeScreenshot } = useElectronScreenshots();
   const [searchInput, setSearchInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [activeView, setActiveView] = useState<"all" | "favorites" | "recent" | "archived" | string>("all");
@@ -78,6 +78,7 @@ export function Dashboard() {
   }, [triggerRefresh, loadFolders]);
 
   const handleImportFiles = async () => { const r = await (window.electronAPI as any)?.import?.files?.(); if (r?.data?.length > 0) triggerRefresh(); };
+  const handleCapture = async () => { await takeScreenshot(); };
   const handleImportFolder = async () => { const r = await (window.electronAPI as any)?.import?.folder?.(); if (r?.data) { loadFolders(); triggerRefresh(); } };
   const handleCreateFolder = async (e: React.FormEvent) => { e.preventDefault(); if (!newFolderName.trim()) return; await (window.electronAPI as any)?.folder?.create?.(newFolderName); setNewFolderName(""); setIsCreatingFolder(false); loadFolders(); };
   const handleRenameFolder = async (id: string, newName: string) => { if (!newName.trim()) { setEditingFolderId(null); return; } await (window.electronAPI as any)?.folder?.rename?.(id, newName); setEditingFolderId(null); loadFolders(); };
@@ -91,7 +92,7 @@ export function Dashboard() {
       <div className="blog-container">
         <div className="blog-part blog-header-container">
           <div style={{ marginBottom: 40 }}>
-            <div className="blog-menu" onClick={() => setActiveView("all")}><Camera size={20} style={{ marginRight: 10 }} />Capture</div>
+            <div className="blog-menu" onClick={handleCapture}><Camera size={20} style={{ marginRight: 10 }} />Capture</div>
             <div className="blog-menu" onClick={handleImportFiles} style={{ marginTop: 12 }}><Upload size={20} style={{ marginRight: 10 }} />Import Files</div>
             <div className="blog-menu" onClick={handleImportFolder} style={{ marginTop: 12 }}><FolderOpen size={20} style={{ marginRight: 10 }} />Import Folder</div>
           </div>
