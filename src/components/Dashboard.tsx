@@ -212,7 +212,7 @@ export function Dashboard() {
         onDragOver={e => { if (isUserFolder && (canDrop || !draggingFolderId)) { e.preventDefault(); e.currentTarget.classList.add('folder-drag-over'); }}}
         onDragLeave={e => e.currentTarget.classList.remove('folder-drag-over')}
         onDrop={e => isUserFolder && handleScreenshotDrop(e, viewId)}
-        className={`flex-shrink-0 w-[110px] cursor-pointer transition-all duration-200
+        className={`flex-shrink-0 w-[150px] cursor-pointer transition-all duration-200
           ${isActive ? 'ring-2 ring-[#161419] ring-offset-2 ring-offset-[#e9e6e4]' : 'hover:scale-[1.02]'}
           ${isDragging ? 'opacity-50' : ''}
           [&.folder-drag-over]:ring-2 [&.folder-drag-over]:ring-blue-500`}
@@ -258,17 +258,17 @@ export function Dashboard() {
       {/* Folders Section */}
       <div className="px-4 py-3 border-b border-[#94918f]">
         <div className="flex items-center justify-between mb-2">
-          <h2 className="text-[10px] font-medium uppercase tracking-wider text-[#161419] opacity-60">Collections</h2>
+          <h2 className="text-[10px] font-medium uppercase tracking-wider text-[#161419] opacity-60">FOLDERS</h2>
           <button onClick={() => setIsCreatingFolder(true)} className="flex items-center gap-1 px-2 py-0.5 text-[9px] font-medium text-[#161419] border border-[#94918f] hover:border-[#161419] hover:bg-[#161419] hover:text-[#e9e6e4] transition-colors"><Plus size={10} />NEW</button>
         </div>
-        <div className="flex gap-2 overflow-x-auto pb-1">
+        <div className="grid grid-cols-[repeat(auto-fill,150px)] gap-3 max-h-[340px] overflow-y-auto">
           <FolderCard viewId="all" name="All" count={allCount} icon={<Camera size={18} className="text-[#94918f]" />} />
           <FolderCard viewId="favorites" name="Favorites" count={favCount} icon={<Star size={18} className="text-[#94918f]" />} />
-          {rootFolders.map(f => (
-            <FolderCard key={f.id} viewId={f.id} name={f.name} count={f.screenshot_count} icon={<Folder size={18} className="text-[#94918f]" />} subCount={getChildFolders(f.id).length || undefined} />
+          {folders.map(f => (
+            <FolderCard key={f.id} viewId={f.id} name={f.parent_id ? `↳ ${f.name}` : f.name} count={f.screenshot_count} icon={<Folder size={18} className={f.parent_id ? "text-[#3b82f6]" : "text-[#94918f]"} />} subCount={getChildFolders(f.id).length || undefined} />
           ))}
           {isCreatingFolder && (
-            <div className="flex-shrink-0 w-[110px]">
+            <div className="flex-shrink-0 w-[150px]">
               <div className="border border-[#161419] overflow-hidden bg-[#e9e6e4]">
                 <div className="aspect-square bg-[#161419] flex items-center justify-center"><Folder size={18} className="text-[#94918f]" /></div>
                 <form onSubmit={handleCreateFolder} className="p-1.5 border-t border-[#94918f]">
