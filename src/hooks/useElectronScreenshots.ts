@@ -349,14 +349,29 @@ export function useElectronScreenshots() {
   }, [isElectron, handleScreenshot, handleOCRProcess]);
 
   const takeScreenshot = useCallback(async () => {
-    if (!isElectron || !window.electronAPI?.takeScreenshot) return;
-    if (capturingRef.current) return;
+    console.log('[Hook] takeScreenshot called');
+    console.log('[Hook] isElectron:', isElectron);
+    console.log('[Hook] window.electronAPI:', window.electronAPI);
+    console.log('[Hook] window.electronAPI.takeScreenshot:', window.electronAPI?.takeScreenshot);
+    console.log('[Hook] capturingRef.current:', capturingRef.current);
+    
+    if (!isElectron || !window.electronAPI?.takeScreenshot) {
+      console.log('[Hook] Exiting early - no electron or no takeScreenshot');
+      return;
+    }
+    if (capturingRef.current) {
+      console.log('[Hook] Already capturing, skipping');
+      return;
+    }
     capturingRef.current = true;
     try {
+      console.log('[Hook] Calling window.electronAPI.takeScreenshot()');
       await window.electronAPI.takeScreenshot();
+      console.log('[Hook] window.electronAPI.takeScreenshot() completed');
     } finally {
       setTimeout(() => {
         capturingRef.current = false;
+        console.log('[Hook] Reset capturingRef');
       }, 250);
     }
   }, [isElectron]);

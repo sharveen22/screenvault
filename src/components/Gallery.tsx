@@ -326,16 +326,18 @@ export function Gallery({ searchQuery, activeView, onDropSuccess, captureStatus,
   };
 
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
+    // SQLite CURRENT_TIMESTAMP stores UTC, so we need to parse it as UTC
+    const utcDate = dateString.endsWith("Z") ? dateString : dateString + "Z";
+    const date = new Date(utcDate);
     const now = new Date();
     const diffTime = Math.abs(now.getTime() - date.getTime());
     const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    const timeStr = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
-    if (diffDays === 0) return 'Today';
-    if (diffDays === 1) return 'Yesterday';
-    if (diffDays < 7) return `${diffDays} days ago`;
-    if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
-    return date.toLocaleDateString();
+    if (diffDays === 0) return "Today, " + timeStr;
+    if (diffDays === 1) return "Yesterday, " + timeStr;
+    if (diffDays < 7) return diffDays + "d ago, " + timeStr;
+    return date.toLocaleDateString([], { month: "short", day: "numeric" }) + ", " + timeStr;
   };
 
   if (loading) {
