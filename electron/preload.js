@@ -91,9 +91,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   folder: {
     list: () => ipcRenderer.invoke('folder:list'),
-    create: (name) => ipcRenderer.invoke('folder:create', name),
+    create: (name, parentId) => ipcRenderer.invoke('folder:create', name, parentId),
     rename: (id, name) => ipcRenderer.invoke('folder:rename', { id, name }),
     delete: (id) => ipcRenderer.invoke('folder:delete', id),
+    move: (folderId, targetParentId) => ipcRenderer.invoke('folder:move', { folderId, targetParentId }),
     moveScreenshot: (screenshotId, folderId) => ipcRenderer.invoke('screenshot:move', { screenshotId, folderId }),
   },
   file: {
