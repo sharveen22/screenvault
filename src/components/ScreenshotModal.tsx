@@ -40,6 +40,20 @@ export function ScreenshotModal({ screenshot, onClose, onUpdate }: ScreenshotMod
     setNoteHistory(screenshot.note_history || []);
   }, [screenshot.note_history]);
 
+  // Handle Escape key to close modal
+  useEffect(() => {
+    const handleEscapeKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    document.addEventListener('keydown', handleEscapeKey);
+    return () => {
+      document.removeEventListener('keydown', handleEscapeKey);
+    };
+  }, [onClose]);
+
   const loadImage = async () => {
     setImageLoading(true);
     // Use requestIdleCallback or setTimeout to defer image loading slightly
@@ -173,8 +187,14 @@ export function ScreenshotModal({ screenshot, onClose, onUpdate }: ScreenshotMod
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#161419]/80 backdrop-blur-sm p-4">
-      <div className="bg-[#e9e6e4] rounded-none shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-hidden flex flex-col border border-[#94918f]">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[#161419]/80 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-[#e9e6e4] rounded-none shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-hidden flex flex-col border border-[#94918f]"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between p-6 border-b border-[#94918f]">
           <h2 className="text-xl font-bold text-[#161419] truncate flex-1 pr-4 title-font">
             {screenshot.file_name}

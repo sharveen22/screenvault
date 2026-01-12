@@ -215,6 +215,9 @@ export function Gallery({ searchQuery, activeView, onDropSuccess, captureStatus,
       return;
     }
 
+    // Trigger parent refresh to update counts
+    onDropSuccess?.();
+
     // Jika sedang view "favorites" dan di-unfavorite → hilangkan dari list
     if (activeView === 'favorites' && !next) {
       setScreenshots((prev) => prev.filter((s) => s.id !== screenshot.id));
@@ -469,7 +472,7 @@ function ScreenshotCard({
           <img
             src={imageUrl}
             alt={screenshot.file_name}
-            className="w-full h-full object-cover"
+            className="w-full h-full object-contain"
             loading="lazy"
           />
         ) : (
