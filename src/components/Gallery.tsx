@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { Virtuoso } from 'react-virtuoso';
 import { db, Screenshot } from '../lib/database';
 import { Star, FolderOpen, Trash2, Image as ImageIcon, Loader2 } from 'lucide-react';
 import { ScreenshotModal } from './ScreenshotModal';
@@ -18,8 +19,12 @@ export function Gallery({ searchQuery, activeView, onDropSuccess, captureStatus,
   const [screenshots, setScreenshots] = useState<Screenshot[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedScreenshot, setSelectedScreenshot] = useState<Screenshot | null>(null);
+  const [windowSize, setWindowSize] = useState({ width: window.innerWidth, height: window.innerHeight });
   const mountedRef = useRef(false);
   const lastPropsRef = useRef({ view: activeView, query: searchQuery, sort: sortOrder });
+  const loadingRef = useRef(false); // Prevent overlapping queries
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // Initial load on mount ONLY
   useEffect(() => {
@@ -62,13 +67,57 @@ export function Gallery({ searchQuery, activeView, onDropSuccess, captureStatus,
     }
   }, [screenshots]);
 
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
+    };
+  }, []);
+
+  // Handle window resize for responsive grid
+  useEffect(() => {
+    const handleResize = () => {
+      setWindowSize({ width: window.innerWidth, height: window.innerHeight });
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const loadScreenshots = async (silent = false) => {
     console.log('[Gallery] loadScreenshots called at', Date.now(), { silent });
+
+    // Clear any pending debounced calls
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+    }
+
+    // For non-silent loads (user actions), debounce to batch rapid calls
+    if (!silent) {
+      debounceRef.current = setTimeout(() => executeLoad(silent), 100);
+      return;
+    }
+
+    // Silent loads (background refreshes) execute immediately but check for duplicates
+    executeLoad(silent);
+  };
+
+  const executeLoad = async (silent = false) => {
+    // Prevent overlapping queries
+    if (loadingRef.current) {
+      console.log('[Gallery] Query already in progress, skipping...');
+      return;
+    }
+
+    loadingRef.current = true;
     if (!silent) setLoading(true);
+
     try {
       const qRaw = (searchQuery || '').trim().toLowerCase();
 
-      console.log('[Gallery] loadScreenshots start', { activeView, q: qRaw });
+      console.log('[Gallery] executeLoad start', { activeView, q: qRaw });
 
       // Build WHERE clause based on activeView for better performance
       let where: Record<string, any> | undefined;
@@ -195,6 +244,7 @@ export function Gallery({ searchQuery, activeView, onDropSuccess, captureStatus,
       console.error('Error loading screenshots:', err);
     } finally {
       setLoading(false);
+      loadingRef.current = false;
     }
   };
 
@@ -379,6 +429,27 @@ export function Gallery({ searchQuery, activeView, onDropSuccess, captureStatus,
     return date.toLocaleDateString([], { month: "short", day: "numeric" }) + ", " + timeStr;
   };
 
+  // Calculate responsive grid columns based on window width
+  const getColumnCount = (width: number) => {
+    if (width < 640) return 2; // sm
+    if (width < 768) return 3; // md
+    if (width < 1024) return 4; // lg
+    if (width < 1280) return 5; // xl
+    return 6; // 2xl+
+  };
+
+  const containerWidth = containerRef.current?.offsetWidth || windowSize.width - 100;
+  const columnCount = getColumnCount(containerWidth);
+
+  // Group screenshots into rows for virtual scrolling
+  const screenshotRows = useMemo(() => {
+    const rows: Screenshot[][] = [];
+    for (let i = 0; i < screenshots.length; i += columnCount) {
+      rows.push(screenshots.slice(i, i + columnCount));
+    }
+    return rows;
+  }, [screenshots, columnCount]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
@@ -403,10 +474,17 @@ export function Gallery({ searchQuery, activeView, onDropSuccess, captureStatus,
     );
   }
 
-  return (
-    <>
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-        {screenshots.map((screenshot) => (
+  // Row renderer for virtual list - each row contains multiple cards
+  const renderRow = (index: number) => {
+    const row = screenshotRows[index];
+    if (!row) return null;
+
+    return (
+      <div className="grid gap-3 mb-3" style={{
+        gridTemplateColumns: `repeat(${columnCount}, minmax(0, 1fr))`,
+        padding: '0 2px'
+      }}>
+        {row.map((screenshot) => (
           <ScreenshotCard
             key={screenshot.id}
             screenshot={screenshot}
@@ -419,6 +497,20 @@ export function Gallery({ searchQuery, activeView, onDropSuccess, captureStatus,
             isProcessingOCR={processingOCR.has(screenshot.id)}
           />
         ))}
+      </div>
+    );
+  };
+
+  return (
+    <>
+      <div ref={containerRef} style={{ width: '100%', height: 'calc(100vh - 280px)' }}>
+        <Virtuoso
+          data={screenshotRows}
+          totalCount={screenshotRows.length}
+          itemContent={renderRow}
+          overscan={2}
+          style={{ height: '100%' }}
+        />
       </div>
 
       {selectedScreenshot && (
@@ -452,8 +544,6 @@ function ScreenshotCard({
   isProcessingOCR?: boolean;
 }) {
   const [imageUrl, setImageUrl] = useState<string>('');
-  const [isVisible, setIsVisible] = useState(false);
-  const cardRef = useRef<HTMLDivElement>(null);
 
   // Show processing indicator if:
   // 1. Explicitly marked as processing OCR, OR
@@ -462,43 +552,19 @@ function ScreenshotCard({
   const hasOcrText = screenshot.ocr_text && screenshot.ocr_text.trim().length > 0;
   const isLikelyProcessing = isProcessingOCR || (!hasTags && !hasOcrText);
 
-  // Intersection Observer for lazy loading
+  // Load image immediately since react-window handles virtualization
   useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            setIsVisible(true);
-            observer.disconnect();
-          }
-        });
-      },
-      {
-        rootMargin: '100px', // Start loading 100px before entering viewport
-      }
-    );
-
-    if (cardRef.current) {
-      observer.observe(cardRef.current);
-    }
-
-    return () => observer.disconnect();
-  }, []);
-
-  // Only load image when visible
-  useEffect(() => {
-    if (isVisible && !imageUrl) {
+    if (!imageUrl) {
       getImageUrl(screenshot.storage_path).then(setImageUrl);
     }
-  }, [isVisible, screenshot.storage_path, imageUrl]);
+  }, [screenshot.storage_path, imageUrl, getImageUrl]);
 
   return (
     <div
-      ref={cardRef}
       onClick={() => onSelect(screenshot)}
       draggable
       onDragStart={(e) => onDragStart(e, screenshot)}
-      className="group relative bg-transparent border border-[#94918f] overflow-hidden hover:border-[#161419] transition-all cursor-move"
+      className="group relative bg-transparent border border-[#94918f] overflow-hidden hover:border-[#161419] transition-all cursor-move h-full"
       style={{ borderRadius: 0 }}
     >
       <div
