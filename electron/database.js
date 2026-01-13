@@ -137,6 +137,11 @@ function createInitialSchema() {
 
     CREATE INDEX IF NOT EXISTS idx_screenshots_created_at ON screenshots(created_at);
     CREATE INDEX IF NOT EXISTS idx_screenshots_folder_id ON screenshots(folder_id);
+    CREATE INDEX IF NOT EXISTS idx_screenshots_is_favorite ON screenshots(is_favorite);
+    CREATE INDEX IF NOT EXISTS idx_screenshots_is_archived ON screenshots(is_archived);
+    CREATE INDEX IF NOT EXISTS idx_screenshots_storage_path ON screenshots(storage_path);
+    CREATE INDEX IF NOT EXISTS idx_screenshots_folder_favorite ON screenshots(folder_id, is_favorite);
+    CREATE INDEX IF NOT EXISTS idx_screenshots_folder_created ON screenshots(folder_id, created_at DESC);
   `);
 }
 
@@ -205,6 +210,21 @@ function runMigrations(currentVersion) {
 
           console.log(`Migrated ${screenshots.length} existing notes to note_history`);
         }
+      }
+    },
+    {
+      version: '1.0.3',
+      description: 'Add performance indexes for faster queries',
+      up: () => {
+        console.log('Creating performance indexes...');
+        db.exec(`
+          CREATE INDEX IF NOT EXISTS idx_screenshots_is_favorite ON screenshots(is_favorite);
+          CREATE INDEX IF NOT EXISTS idx_screenshots_is_archived ON screenshots(is_archived);
+          CREATE INDEX IF NOT EXISTS idx_screenshots_storage_path ON screenshots(storage_path);
+          CREATE INDEX IF NOT EXISTS idx_screenshots_folder_favorite ON screenshots(folder_id, is_favorite);
+          CREATE INDEX IF NOT EXISTS idx_screenshots_folder_created ON screenshots(folder_id, created_at DESC);
+        `);
+        console.log('Performance indexes created successfully');
       }
     }
   ];
