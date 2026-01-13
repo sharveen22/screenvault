@@ -167,8 +167,17 @@ export function Gallery({ searchQuery, activeView, onDropSuccess, captureStatus,
       // =========================
       // 5) FILTER OUT NON-EXISTENT FILES
       // =========================
-      // Check if files actually exist on disk
-      if (window.electronAPI?.file?.exists) {
+      // Check if files actually exist on disk using batch API (much faster)
+      if ((window.electronAPI as any)?.file?.existsBatch) {
+        const filePaths = filtered.map((s: any) => s.storage_path);
+        const { data: existsResults } = await (window.electronAPI as any).file.existsBatch(filePaths);
+
+        if (Array.isArray(existsResults)) {
+          filtered = filtered.filter((_: any, index: number) => existsResults[index]);
+          console.log('[Gallery] After batch file existence check:', filtered.length);
+        }
+      } else if (window.electronAPI?.file?.exists) {
+        // Fallback to individual checks if batch API not available
         const existenceChecks = await Promise.all(
           filtered.map(async (s: any) => {
             const { data: exists } = await window.electronAPI.file.exists(s.storage_path);
