@@ -44,70 +44,90 @@ export function Dashboard() {
     if (data) setFolders(data);
   }, []);
 
+  const loadingRef = useRef(false); // Prevent overlapping calls
+  const loadDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const loadScreenshotsAndImages = useCallback(async () => {
-    console.log('[Dashboard] loadScreenshotsAndImages starting...');
-    try {
-      // Use db.from like Gallery does
-      const result = await db.from('screenshots').select({
-        orderBy: { column: 'created_at', direction: 'desc' },
-        limit: 1000,
-      }) as any;
-      
-      if (!result?.data) {
-        console.log('[Dashboard] No screenshots data');
-        return;
-      }
-      
-      const screenshots = result.data;
-      console.log('[Dashboard] Got', screenshots.length, 'screenshots');
-      
-      setAllCount(screenshots.length);
-      setFavCount(screenshots.filter((s: any) => s.is_favorite).length);
-      
-      // Load images for folder previews
-      const api = window.electronAPI as any;
-      if (!api?.file?.read) {
-        console.log('[Dashboard] No file.read API');
-        return;
-      }
-      
-      const loadImage = async (path: string): Promise<string> => {
-        try {
-          const res = await api.file.read(path);
-          if (res?.data) return `data:image/png;base64,${res.data}`;
-        } catch (e) {
-          console.error('[Dashboard] Image load error:', e);
-        }
-        return '';
-      };
-      
-      const imageMap: Record<string, string[]> = {};
-      
-      // All - first 4
-      console.log('[Dashboard] Loading All images...');
-      const allPaths = screenshots.slice(0, 4).map((s: any) => s.storage_path);
-      const allImgs = await Promise.all(allPaths.map(loadImage));
-      imageMap['all'] = allImgs.filter(Boolean);
-      console.log('[Dashboard] All images:', imageMap['all'].length);
-      
-      // Favorites - first 4
-      const favScreenshots = screenshots.filter((s: any) => s.is_favorite).slice(0, 4);
-      const favImgs = await Promise.all(favScreenshots.map((s: any) => loadImage(s.storage_path)));
-      imageMap['favorites'] = favImgs.filter(Boolean);
-      
-      // By folder
-      const folderIds = [...new Set(screenshots.map((s: any) => s.folder_id).filter(Boolean))] as string[];
-      for (const fid of folderIds) {
-        const folderScreenshots = screenshots.filter((s: any) => s.folder_id === fid).slice(0, 4);
-        const fImgs = await Promise.all(folderScreenshots.map((s: any) => loadImage(s.storage_path)));
-        imageMap[fid] = fImgs.filter(Boolean);
-      }
-      
-      console.log('[Dashboard] Loaded images for folders:', Object.keys(imageMap));
-      setFolderImages(imageMap);
-    } catch (e) {
-      console.error('[Dashboard] loadScreenshotsAndImages error:', e);
+    // Debounce: cancel any pending load
+    if (loadDebounceRef.current) {
+      clearTimeout(loadDebounceRef.current);
     }
+
+    // Schedule load after 150ms of inactivity
+    loadDebounceRef.current = setTimeout(async () => {
+      // Prevent overlapping calls
+      if (loadingRef.current) {
+        console.log('[Dashboard] Already loading, skipping...');
+        return;
+      }
+
+      loadingRef.current = true;
+      console.log('[Dashboard] loadScreenshotsAndImages starting...');
+      try {
+        // Use db.from like Gallery does
+        const result = await db.from('screenshots').select({
+          orderBy: { column: 'created_at', direction: 'desc' },
+          limit: 1000,
+        }) as any;
+
+        if (!result?.data) {
+          console.log('[Dashboard] No screenshots data');
+          return;
+        }
+
+        const screenshots = result.data;
+        console.log('[Dashboard] Got', screenshots.length, 'screenshots');
+
+        setAllCount(screenshots.length);
+        setFavCount(screenshots.filter((s: any) => s.is_favorite).length);
+
+        // Load images for folder previews
+        const api = window.electronAPI as any;
+        if (!api?.file?.read) {
+          console.log('[Dashboard] No file.read API');
+          return;
+        }
+
+        const loadImage = async (path: string): Promise<string> => {
+          try {
+            const res = await api.file.read(path);
+            if (res?.data) return `data:image/png;base64,${res.data}`;
+          } catch (e) {
+            console.error('[Dashboard] Image load error:', e);
+          }
+          return '';
+        };
+
+        const imageMap: Record<string, string[]> = {};
+
+        // All - first 4
+        console.log('[Dashboard] Loading All images...');
+        const allPaths = screenshots.slice(0, 4).map((s: any) => s.storage_path);
+        const allImgs = await Promise.all(allPaths.map(loadImage));
+        imageMap['all'] = allImgs.filter(Boolean);
+        console.log('[Dashboard] All images:', imageMap['all'].length);
+
+        // Favorites - first 4
+        const favScreenshots = screenshots.filter((s: any) => s.is_favorite).slice(0, 4);
+        const favImgs = await Promise.all(favScreenshots.map((s: any) => loadImage(s.storage_path)));
+        imageMap['favorites'] = favImgs.filter(Boolean);
+
+        // By folder
+        const folderIds = [...new Set(screenshots.map((s: any) => s.folder_id).filter(Boolean))] as string[];
+        for (const fid of folderIds) {
+          const folderScreenshots = screenshots.filter((s: any) => s.folder_id === fid).slice(0, 4);
+          const fImgs = await Promise.all(folderScreenshots.map((s: any) => loadImage(s.storage_path)));
+          imageMap[fid] = fImgs.filter(Boolean);
+        }
+
+        console.log('[Dashboard] Loaded images for folders:', Object.keys(imageMap));
+        setFolderImages(imageMap);
+      } catch (e) {
+        console.error('[Dashboard] loadScreenshotsAndImages error:', e);
+      } finally {
+        loadingRef.current = false;
+      }
+    }, 150); // 150ms debounce
   }, []);
 
   useEffect(() => { 
@@ -117,8 +137,14 @@ export function Dashboard() {
 
   const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const triggerRefresh = useCallback(() => {
+    // Batch multiple refresh events with 300ms debounce
     if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
-    refreshTimeoutRef.current = setTimeout(() => { setRefreshKey(k => k + 1); loadScreenshotsAndImages(); loadFolders(); }, 200);
+    refreshTimeoutRef.current = setTimeout(() => {
+      console.log('[Dashboard] Batched refresh triggered');
+      setRefreshKey(k => k + 1);
+      loadScreenshotsAndImages();
+      loadFolders();
+    }, 300); // Increased from 200ms to 300ms for better batching
   }, [loadScreenshotsAndImages, loadFolders]);
 
   useEffect(() => {
@@ -138,7 +164,19 @@ export function Dashboard() {
     window.addEventListener('screenshot-saved-local', onLocalSaved);
     window.addEventListener('ocr-complete', onOcrComplete);
     window.addEventListener('ocr-start', onOcrStart);
-    return () => { off1?.(); off2?.(); off3?.(); off4?.(); off5?.(); window.removeEventListener('screenshot-saved-local', onLocalSaved); window.removeEventListener('ocr-complete', onOcrComplete); window.removeEventListener('ocr-start', onOcrStart); if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current); };
+    return () => {
+      off1?.();
+      off2?.();
+      off3?.();
+      off4?.();
+      off5?.();
+      window.removeEventListener('screenshot-saved-local', onLocalSaved);
+      window.removeEventListener('ocr-complete', onOcrComplete);
+      window.removeEventListener('ocr-start', onOcrStart);
+      // Clean up all timeouts
+      if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
+      if (loadDebounceRef.current) clearTimeout(loadDebounceRef.current);
+    };
   }, [triggerRefresh, loadFolders]);
 
   const handleImportFiles = async () => { setShowImportMenu(false); const result = await (window.electronAPI as any)?.import?.files?.(); if (result?.data?.length > 0) triggerRefresh(); };

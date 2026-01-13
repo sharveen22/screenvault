@@ -20,6 +20,8 @@ export function Gallery({ searchQuery, activeView, onDropSuccess, captureStatus,
   const [selectedScreenshot, setSelectedScreenshot] = useState<Screenshot | null>(null);
   const mountedRef = useRef(false);
   const lastPropsRef = useRef({ view: activeView, query: searchQuery, sort: sortOrder });
+  const loadingRef = useRef(false); // Prevent overlapping queries
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Initial load on mount ONLY
   useEffect(() => {
@@ -62,13 +64,47 @@ export function Gallery({ searchQuery, activeView, onDropSuccess, captureStatus,
     }
   }, [screenshots]);
 
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
+    };
+  }, []);
+
   const loadScreenshots = async (silent = false) => {
     console.log('[Gallery] loadScreenshots called at', Date.now(), { silent });
+
+    // Clear any pending debounced calls
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+    }
+
+    // For non-silent loads (user actions), debounce to batch rapid calls
+    if (!silent) {
+      debounceRef.current = setTimeout(() => executeLoad(silent), 100);
+      return;
+    }
+
+    // Silent loads (background refreshes) execute immediately but check for duplicates
+    executeLoad(silent);
+  };
+
+  const executeLoad = async (silent = false) => {
+    // Prevent overlapping queries
+    if (loadingRef.current) {
+      console.log('[Gallery] Query already in progress, skipping...');
+      return;
+    }
+
+    loadingRef.current = true;
     if (!silent) setLoading(true);
+
     try {
       const qRaw = (searchQuery || '').trim().toLowerCase();
 
-      console.log('[Gallery] loadScreenshots start', { activeView, q: qRaw });
+      console.log('[Gallery] executeLoad start', { activeView, q: qRaw });
 
       // Build WHERE clause based on activeView for better performance
       let where: Record<string, any> | undefined;
@@ -195,6 +231,7 @@ export function Gallery({ searchQuery, activeView, onDropSuccess, captureStatus,
       console.error('Error loading screenshots:', err);
     } finally {
       setLoading(false);
+      loadingRef.current = false;
     }
   };
 
