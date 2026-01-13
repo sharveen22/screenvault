@@ -116,6 +116,7 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
+      webSecurity: false, // Allow file:// protocol for drag and drop
     },
     icon: path.join(__dirname, '../public/icon.png'),
   });
@@ -1604,6 +1605,16 @@ ipcMain.handle('file:reveal', async (_e, filePath) => {
   }
 });
 
+ipcMain.handle('file:open-screenshots-folder', async () => {
+  try {
+    const dir = screenshotsDir();
+    shell.openPath(dir);
+    return { data: true, error: null };
+  } catch (error) {
+    return { data: null, error: error.message };
+  }
+});
+
 ipcMain.handle('file:share', async (_e, filePath) => {
   try {
     if (process.platform === 'darwin') {
@@ -1664,6 +1675,23 @@ ipcMain.handle('file:rename', async (_e, { oldPath, newName }) => {
   } catch (error) {
     sendLog(`file:rename error: ${error}`, 'error');
     return { newPath: null, error: error.message };
+  }
+});
+
+ipcMain.on('file:start-drag', (event, filePath) => {
+  try {
+    if (!filePath || !fs.existsSync(filePath)) {
+      sendLog(`file:start-drag error: File not found at ${filePath}`, 'error');
+      return;
+    }
+
+    event.sender.startDrag({
+      file: filePath,
+      icon: nativeImage.createFromPath(filePath).resize({ width: 64, height: 64 })
+    });
+    sendLog(`Started drag for file: ${filePath}`);
+  } catch (error) {
+    sendLog(`file:start-drag error: ${error}`, 'error');
   }
 });
 

@@ -281,10 +281,37 @@ export function Gallery({ searchQuery, activeView, onDropSuccess, captureStatus,
     }
   };
 
-  const handleDragStart = (e: React.DragEvent, screenshot: Screenshot) => {
+  const handleDragStart = async (e: React.DragEvent, screenshot: Screenshot) => {
     console.log('[Gallery] Drag start for screenshot:', screenshot.id);
+
+    // Set data for internal drag-and-drop (within app) for folder moves
     e.dataTransfer.setData('text/plain', screenshot.id);
-    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.effectAllowed = 'copyMove';
+
+    // For external drag: fetch the file and create a File object
+    // This enables dragging to external apps like VS Code, WhatsApp, etc.
+    try {
+      const response = await fetch(`file://${screenshot.storage_path}`);
+      const blob = await response.blob();
+      const file = new File([blob], screenshot.file_name, { type: screenshot.file_type });
+
+      // Create a DataTransfer object and add the file
+      const dt = new DataTransfer();
+      dt.items.add(file);
+
+      // Copy files to the event's dataTransfer
+      for (let i = 0; i < dt.files.length; i++) {
+        e.dataTransfer.items.add(dt.files[i]);
+      }
+
+      console.log('[Gallery] File added to drag operation:', screenshot.file_name);
+    } catch (error) {
+      console.error('[Gallery] Failed to add file to drag:', error);
+      // Fallback to IPC-based drag
+      if (window.electronAPI?.file.startDrag) {
+        window.electronAPI.file.startDrag(screenshot.storage_path);
+      }
+    }
 
     // Create a custom drag preview - blue box with text
     const dragPreview = document.createElement('div');
