@@ -289,6 +289,9 @@ export function Dashboard() {
               </div>
             )}
           </div>
+          <button onClick={() => window.electronAPI?.file.openScreenshotsFolder()} className="flex items-center gap-1.5 px-3 py-2 border border-[#94918f] text-[#161419] text-xs font-medium hover:border-[#161419] transition-colors" title="Open Screenshots Folder">
+            <FolderOpen size={14} />
+          </button>
           <button onClick={handleCapture} className="flex items-center gap-1.5 px-3 py-2 bg-[#161419] text-[#e9e6e4] text-xs font-medium hover:bg-[#2a2730] transition-colors"><Camera size={14} />CAPTURE</button>
           <div className="relative">
             <button onClick={() => setShowImportMenu(!showImportMenu)} className="flex items-center gap-1.5 px-3 py-2 border border-[#161419] text-[#161419] text-xs font-medium hover:bg-[#161419] hover:text-[#e9e6e4] transition-colors"><Upload size={14} />IMPORT<ChevronDown size={12} /></button>

@@ -103,6 +103,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     exists: (filePath) => ipcRenderer.invoke('file:exists', filePath),
     reveal: (filePath) => ipcRenderer.invoke('file:reveal', filePath),
     share: (filePath) => ipcRenderer.invoke('file:share', filePath),
+    startDrag: (filePath) => ipcRenderer.send('file:start-drag', filePath),
+    openScreenshotsFolder: () => ipcRenderer.invoke('file:open-screenshots-folder'),
   },
   renameFile: (oldPath, newName) => ipcRenderer.invoke('file:rename', { oldPath, newName }),
   
