@@ -54,6 +54,10 @@ npm install
 npm run dev
 ```
 
+### Marketing Website
+
+The marketing landing page is located in the [website/](website/) directory and is deployed separately to Vercel/Netlify. See [website/README.md](website/README.md) for deployment instructions.
+
 ---
 
 ## 📊 Performance
@@ -127,8 +131,13 @@ screenvault/
 │   │   └── useElectronScreenshots.ts
 │   └── lib/
 │       └── database.ts           # Database queries
+├── website/             # Marketing landing page (Vercel/Netlify)
+│   ├── index.html       # Landing page
+│   ├── download.html    # Download confirmation page
+│   └── assets/          # Website images and assets
 ├── release/             # Build output
 ├── db/                  # SQLite database
+├── vercel.json          # Vercel deployment configuration
 └── package.json
 ```
 
