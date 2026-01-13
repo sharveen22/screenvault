@@ -25,7 +25,53 @@
 
 ## 🎯 LATEST FEATURES (January 13, 2026)
 
-### 1. Performance Optimizations Phase 3 (PR #44) 🔥 NEW!
+### 1. UI Fixes & Real-time Updates (PR #45) 🔥 NEW!
+**Real-time favorite counts, edited image refresh, and UI improvements**
+
+#### Real-time Favorite Count Updates ⭐
+- **Instant feedback:** Favorite count in sidebar updates immediately when favoriting/unfavoriting from modal
+- **Zero delay:** Bypasses debounced refresh for instant visual feedback (0ms vs 300ms)
+- **Implementation:** Callback chain from ScreenshotModal → Gallery → Dashboard
+- **Technical Details:**
+  - `Dashboard.tsx`: Added `updateFavCount` callback that immediately updates state
+  - `Gallery.tsx`: Pass `onFavoriteToggle` prop to modal and handle in `toggleFavorite`
+  - `ScreenshotModal.tsx`: Call `onFavoriteToggle(+1 or -1)` on favorite status change
+
+#### Edited Image Refresh Fix 🖼️
+- **Problem:** Edited screenshots weren't appearing in gallery tiles after saving from editor
+- **Root cause:** Cache and thumbnails weren't being invalidated/regenerated after editing
+- **Solution:**
+  - Invalidate LRU file cache for both original file and thumbnail
+  - Delete old thumbnail file from disk
+  - Regenerate new thumbnail from edited image
+- **Result:** Gallery tiles show edited images immediately without manual refresh
+- **Technical Details:**
+  - `electron/main.js` in `popup:save` handler:
+    ```javascript
+    fileCache.invalidate(existingScreenshot.storage_path);
+    fileCache.invalidate(thumbPath);
+    if (fs.existsSync(thumbPath)) fs.unlinkSync(thumbPath);
+    generateThumbnail(existingScreenshot.storage_path);
+    ```
+
+#### UI Improvements 🎨
+- **Window Title:** Simplified from "ScreenVault: Screenshot Management Platform" to just "ScreenVault"
+  - `index.html`: Updated `<title>` tag
+- **Search Bar Relocation:** Moved from top toolbar to screenshots section
+  - Better contextual placement - search is now directly above the content it filters
+  - Top toolbar cleaner and focused on global actions only
+  - Improved placeholder text: "Search screenshots..." (was "Search...")
+  - `Dashboard.tsx`: Moved search input from top bar to main content section
+
+**Files Modified in PR #45:**
+- `src/components/Dashboard.tsx` - Added `updateFavCount`, relocated search bar
+- `src/components/Gallery.tsx` - Added `onFavoriteToggle` prop
+- `src/components/ScreenshotModal.tsx` - Call `onFavoriteToggle` on favorite change
+- `electron/main.js` - Cache invalidation + thumbnail regeneration after editing
+- `index.html` - Simplified title tag
+- `SCREENVAULT_CONTEXT.md` - Updated documentation
+
+### 2. Performance Optimizations Phase 3 (PR #44) ⚡⚡⚡
 **LRU Cache + Smart OCR + Full-Resolution Viewing**
 
 #### LRU File Cache (Optimization #11)
@@ -697,10 +743,15 @@ I'm continuing work on ScreenVault, an Electron-based macOS screenshot managemen
   - Debounce & state updates (40% fewer queries)
   - Virtual scrolling (10x faster with 1000+ screenshots, 75% less memory)
   - Image thumbnails (10-20x faster loading, 100x less data transfer)
-- ✅ **Performance Phase 3 (Instant & Crystal Clear):** 🔥 NEW!
+- ✅ **Performance Phase 3 (Instant & Crystal Clear):**
   - LRU file cache (instant folder switching, <100ms)
   - Smart OCR tags (3-phase algorithm, 8 relevant tags)
   - Full-resolution viewing (modal + editor, crystal clear images)
+- ✅ **UI Fixes & Real-time Updates (PR #45):** 🔥 NEW!
+  - Real-time favorite count updates (instant, no delay)
+  - Edited images refresh immediately in gallery
+  - Search bar moved to screenshots section
+  - Simplified window title
 
 **Latest PRs:**
 - PR #32: Duplicates Fix (merged)
@@ -710,10 +761,11 @@ I'm continuing work on ScreenVault, an Electron-based macOS screenshot managemen
 - PR #41: Batch File Checks & React Optimizations (merged)
 - PR #42: Debouncing + Virtual Scrolling (merged)
 - PR #43: Image Thumbnails (merged)
-- PR #44: LRU Cache + Smart OCR + Full-Res Viewing (open) ← **CURRENT PR**
+- PR #44: LRU Cache + Smart OCR + Full-Res Viewing (merged)
+- PR #45: Real-time Favorites + Edited Image Refresh + UI Fixes (open) ← **CURRENT PR**
 
-**Current Branch:** `feature/performance-enhancements-phase3`
-**Status:** Phase 3 optimizations complete, PR #44 ready for merge
+**Current Branch:** `feature/ui-fixes-and-improvements`
+**Status:** All UI fixes complete, PR #45 ready for review
 
 **Quick Build & Launch:**
 ```bash
