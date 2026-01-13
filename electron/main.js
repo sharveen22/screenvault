@@ -1119,16 +1119,33 @@ ipcMain.on('popup:save', (_event, dataUrl) => {
         // Update existing file
         fs.writeFileSync(existingScreenshot.storage_path, image.toPNG());
         sendLog(`Updated existing screenshot: ${existingScreenshot.storage_path}`);
-        
+
+        // Invalidate cache and regenerate thumbnail
+        const thumbPath = getThumbnailPath(existingScreenshot.storage_path);
+        fileCache.invalidate(existingScreenshot.storage_path);
+        fileCache.invalidate(thumbPath);
+
+        // Delete old thumbnail so it gets regenerated
+        if (fs.existsSync(thumbPath)) {
+          fs.unlinkSync(thumbPath);
+          sendLog(`Deleted old thumbnail: ${thumbPath}`);
+        }
+
+        // Regenerate thumbnail with edited image
+        const newThumbPath = generateThumbnail(existingScreenshot.storage_path);
+        if (newThumbPath) {
+          sendLog(`Regenerated thumbnail: ${newThumbPath}`);
+        }
+
         // Update database entry (update file_size and dimensions)
         const stats = fs.statSync(existingScreenshot.storage_path);
         const size = image.getSize();
         db.prepare(`
-          UPDATE screenshots 
-          SET file_size = ?, width = ?, height = ?, updated_at = CURRENT_TIMESTAMP 
+          UPDATE screenshots
+          SET file_size = ?, width = ?, height = ?, updated_at = CURRENT_TIMESTAMP
           WHERE id = ?
         `).run(stats.size, size.width || 0, size.height || 0, existingScreenshot.id);
-        
+
         sendLog(`Updated database entry for ID: ${existingScreenshot.id}`);
       } else {
         // No existing entry, save as new (shouldn't happen in normal flow)

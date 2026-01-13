@@ -147,6 +147,10 @@ export function Dashboard() {
     }, 300); // Increased from 200ms to 300ms for better batching
   }, [loadScreenshotsAndImages, loadFolders]);
 
+  const updateFavCount = useCallback((delta: number) => {
+    setFavCount(prev => Math.max(0, prev + delta));
+  }, []);
+
   useEffect(() => {
     const api = window.electronAPI as any;
     if (!api) return;
@@ -294,10 +298,6 @@ export function Dashboard() {
       {/* Top Bar */}
       <div className="p-3 border-b border-[#94918f]">
         <div className="flex items-center gap-2">
-          <div className="flex-1 flex items-center border border-[#94918f] bg-[#e9e6e4] px-3 py-2 focus-within:border-[#161419]">
-            <Search size={16} className="text-[#161419] opacity-50 mr-2" />
-            <input type="text" placeholder="Search..." value={searchInput} onChange={e => setSearchInput(e.target.value)} className="flex-1 bg-transparent border-none outline-none text-[#161419] text-sm placeholder:text-[#161419] placeholder:opacity-40" />
-          </div>
           <div className="relative">
             <button onClick={() => setShowShortcutsMenu(!showShortcutsMenu)} className="flex items-center gap-1.5 px-3 py-2 border border-[#94918f] text-[#161419] text-xs font-medium hover:border-[#161419] transition-colors" title="Keyboard Shortcuts">
               <Keyboard size={14} />
@@ -377,14 +377,20 @@ export function Dashboard() {
 
       {/* Main Content */}
       <div className="flex-1 overflow-y-auto p-4">
-        <div className="flex justify-between items-center mb-3">
-          <h1 className="text-base font-bold text-[#161419]">{getBreadcrumb()}</h1>
-          <div className="flex gap-1.5">
-            <select value={sortOrder} onChange={e => setSortOrder(e.target.value as any)} className="px-2 py-1 border border-[#94918f] bg-[#e9e6e4] text-[#161419] text-[10px] cursor-pointer hover:border-[#161419]"><option value="newest">Newest</option><option value="oldest">Oldest</option></select>
-            <button onClick={() => setRefreshKey(k => k + 1)} className="px-2 py-1 border border-[#94918f] text-[#161419] text-[10px] hover:border-[#161419] hover:bg-[#161419] hover:text-[#e9e6e4] transition-colors">↻</button>
+        <div className="flex flex-col gap-3 mb-3">
+          <div className="flex justify-between items-center">
+            <h1 className="text-base font-bold text-[#161419]">{getBreadcrumb()}</h1>
+            <div className="flex gap-1.5">
+              <select value={sortOrder} onChange={e => setSortOrder(e.target.value as any)} className="px-2 py-1 border border-[#94918f] bg-[#e9e6e4] text-[#161419] text-[10px] cursor-pointer hover:border-[#161419]"><option value="newest">Newest</option><option value="oldest">Oldest</option></select>
+              <button onClick={() => setRefreshKey(k => k + 1)} className="px-2 py-1 border border-[#94918f] text-[#161419] text-[10px] hover:border-[#161419] hover:bg-[#161419] hover:text-[#e9e6e4] transition-colors">↻</button>
+            </div>
+          </div>
+          <div className="flex items-center border border-[#94918f] bg-[#e9e6e4] px-3 py-2 focus-within:border-[#161419] transition-colors">
+            <Search size={16} className="text-[#161419] opacity-50 mr-2" />
+            <input type="text" placeholder="Search screenshots..." value={searchInput} onChange={e => setSearchInput(e.target.value)} className="flex-1 bg-transparent border-none outline-none text-[#161419] text-sm placeholder:text-[#161419] placeholder:opacity-40" />
           </div>
         </div>
-        <Gallery searchQuery={searchQuery} activeView={activeView} sortOrder={sortOrder} processingOCR={processingOCR} refreshTrigger={refreshKey} onDropSuccess={triggerRefresh} />
+        <Gallery searchQuery={searchQuery} activeView={activeView} sortOrder={sortOrder} processingOCR={processingOCR} refreshTrigger={refreshKey} onDropSuccess={triggerRefresh} onFavoriteToggle={updateFavCount} />
       </div>
 
       {showShortcutsMenu && <div className="fixed inset-0 z-40" onClick={() => setShowShortcutsMenu(false)} />}

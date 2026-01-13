@@ -13,9 +13,10 @@ interface GalleryProps {
   onSortChange?: (order: 'newest' | 'oldest') => void;
   processingOCR?: Set<string>; // IDs of screenshots currently processing OCR
   refreshTrigger?: number; // Trigger to force refresh
+  onFavoriteToggle?: (delta: number) => void; // Update favorite count in parent
 }
 
-export function Gallery({ searchQuery, activeView, onDropSuccess, captureStatus, sortOrder = 'newest', onSortChange, processingOCR = new Set(), refreshTrigger = 0 }: GalleryProps) {
+export function Gallery({ searchQuery, activeView, onDropSuccess, captureStatus, sortOrder = 'newest', onSortChange, processingOCR = new Set(), refreshTrigger = 0, onFavoriteToggle }: GalleryProps) {
   const [screenshots, setScreenshots] = useState<Screenshot[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedScreenshot, setSelectedScreenshot] = useState<Screenshot | null>(null);
@@ -274,6 +275,9 @@ export function Gallery({ searchQuery, activeView, onDropSuccess, captureStatus,
       return;
     }
 
+    // Update favorite count in Dashboard immediately
+    onFavoriteToggle?.(next ? 1 : -1);
+
     // Trigger parent refresh to update counts
     onDropSuccess?.();
 
@@ -518,6 +522,7 @@ export function Gallery({ searchQuery, activeView, onDropSuccess, captureStatus,
           screenshot={selectedScreenshot}
           onClose={() => setSelectedScreenshot(null)}
           onUpdate={loadScreenshots}
+          onFavoriteToggle={onFavoriteToggle}
         />
       )}
     </>
