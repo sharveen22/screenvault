@@ -84,7 +84,8 @@ export function Editor() {
         const removeListener = window.electronAPI.onInit((path) => {
             console.log('[Editor] Received init with path:', path);
             setFilePath(path);
-            window.electronAPI.file.read(path).then(({ data }) => {
+            // Load full-resolution image for editor (useThumbnail = false)
+            window.electronAPI.file.read(path, false).then(({ data }) => {
                 console.log('[Editor] File read result, has data:', !!data);
                 if (data) {
                     const src = `data:image/png;base64,${data}`;
@@ -654,18 +655,20 @@ export function Editor() {
             {/* Canvas Container */}
             <div
                 ref={containerRef}
-                className="flex-1 flex items-center justify-center p-8 relative overflow-hidden"
+                className="flex-1 flex items-center justify-center p-4 relative overflow-hidden"
                 style={{ backgroundColor: '#e9e6e4' }}
                 onMouseDown={handleMouseDown}
                 onMouseMove={handleMouseMove}
                 onMouseUp={handleMouseUp}
                 onClick={handleCanvasClick}
             >
-                <div className="relative shadow-2xl" style={{ maxWidth: '100%', maxHeight: '100%', display: 'flex' }}>
+                <div className="relative shadow-2xl" style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <canvas
                         ref={canvasRef}
                         className="block rounded-sm bg-transparent"
                         style={{
+                            width: '100%',
+                            height: '100%',
                             maxWidth: '100%',
                             maxHeight: '100%',
                             objectFit: 'contain'

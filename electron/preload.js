@@ -99,7 +99,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   file: {
     delete: (filePath) => ipcRenderer.invoke('file:delete', filePath),
-    read: (filePath) => ipcRenderer.invoke('file:read', filePath),
+    read: (filePath, useThumbnail = true) => ipcRenderer.invoke('file:read', filePath, useThumbnail),
     exists: (filePath) => ipcRenderer.invoke('file:exists', filePath),
     existsBatch: (filePaths) => ipcRenderer.invoke('file:existsBatch', filePaths),
     reveal: (filePath) => ipcRenderer.invoke('file:reveal', filePath),

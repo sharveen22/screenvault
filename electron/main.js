@@ -40,6 +40,80 @@ let currentUser = null;
 let isCapturing = false;
 let isQuitting = false; // Flag to track if app is actually quitting
 
+/* ====================== LRU CACHE ====================== */
+// Simple LRU Cache for file reads (50MB limit for instant re-renders)
+class LRUCache {
+  constructor(maxSize = 50 * 1024 * 1024) { // 50MB default
+    this.cache = new Map();
+    this.maxSize = maxSize;
+    this.currentSize = 0;
+  }
+
+  get(key) {
+    if (!this.cache.has(key)) return null;
+
+    // Move to end (most recently used)
+    const value = this.cache.get(key);
+    this.cache.delete(key);
+    this.cache.set(key, value);
+
+    return value.data;
+  }
+
+  set(key, data) {
+    const size = Buffer.byteLength(data);
+
+    // Remove existing key if present
+    if (this.cache.has(key)) {
+      const oldValue = this.cache.get(key);
+      this.currentSize -= oldValue.size;
+      this.cache.delete(key);
+    }
+
+    // Evict oldest entries until we have space
+    while (this.currentSize + size > this.maxSize && this.cache.size > 0) {
+      const firstKey = this.cache.keys().next().value;
+      const firstValue = this.cache.get(firstKey);
+      this.currentSize -= firstValue.size;
+      this.cache.delete(firstKey);
+      console.log(`[Cache] Evicted: ${firstKey} (${(firstValue.size / 1024).toFixed(1)}KB)`);
+    }
+
+    // Add new entry
+    if (size <= this.maxSize) {
+      this.cache.set(key, { data, size });
+      this.currentSize += size;
+      console.log(`[Cache] Cached: ${key} (${(size / 1024).toFixed(1)}KB, total: ${(this.currentSize / 1024 / 1024).toFixed(1)}MB)`);
+    }
+  }
+
+  invalidate(key) {
+    if (this.cache.has(key)) {
+      const value = this.cache.get(key);
+      this.currentSize -= value.size;
+      this.cache.delete(key);
+      console.log(`[Cache] Invalidated: ${key}`);
+    }
+  }
+
+  clear() {
+    this.cache.clear();
+    this.currentSize = 0;
+    console.log('[Cache] Cleared all entries');
+  }
+
+  getStats() {
+    return {
+      entries: this.cache.size,
+      sizeBytes: this.currentSize,
+      sizeMB: (this.currentSize / 1024 / 1024).toFixed(2),
+      maxSizeMB: (this.maxSize / 1024 / 1024).toFixed(2)
+    };
+  }
+}
+
+// Create global file cache
+const fileCache = new LRUCache(50 * 1024 * 1024); // 50MB
 
 /* ====================== LOG helper ====================== */
 function sendLog(msg, level = 'info') {
@@ -657,75 +731,113 @@ function generateSmartFilename(ocrText, originalName) {
   return `${smartPart}_${timestamp}${ext}`;
 }
 
-// Generate tags from OCR text
+// Generate tags from OCR text with smart keyword extraction
 function generateTags(ocrText) {
   if (!ocrText || !ocrText.trim()) return [];
-  
-  const tags = [];
+
+  const categoryTags = [];
+  const keywordTags = [];
   const lowerText = ocrText.toLowerCase();
-  const words = lowerText.split(/\s+/).filter(w => w.length > 2);
-  
+
+  // Phase 1: Pattern-based category detection (PRIORITY)
   // Error/Status patterns
-  if (/error|exception|failed|failure|crash|bug|issue/i.test(lowerText)) tags.push('error');
-  if (/warning|warn|caution|alert/i.test(lowerText)) tags.push('warning');
-  if (/success|completed|done|passed|approved|confirmed/i.test(lowerText)) tags.push('success');
-  if (/loading|processing|pending|waiting/i.test(lowerText)) tags.push('loading');
-  
+  if (/error|exception|failed|failure|crash|bug|issue/i.test(lowerText)) categoryTags.push('error');
+  if (/warning|warn|caution|alert/i.test(lowerText)) categoryTags.push('warning');
+  if (/success|completed|done|passed|approved|confirmed/i.test(lowerText)) categoryTags.push('success');
+
   // Development/Code patterns
-  if (/function|const|let|var|import|export|class|def |return|async|await/i.test(lowerText)) tags.push('code');
-  if (/console|terminal|bash|shell|command|npm|yarn|git|brew/i.test(lowerText)) tags.push('terminal');
-  if (/debug|log|trace|stack/i.test(lowerText)) tags.push('debug');
-  if (/test|spec|jest|mocha|cypress/i.test(lowerText)) tags.push('testing');
-  if (/api|endpoint|request|response|json|xml/i.test(lowerText)) tags.push('api');
-  if (/database|sql|query|table|mongodb|postgres/i.test(lowerText)) tags.push('database');
-  
+  if (/function|const|let|var|import|export|class|def |return|async|await|=>|interface|type /i.test(lowerText)) categoryTags.push('code');
+  if (/console|terminal|bash|shell|command|npm|yarn|git|brew|sudo/i.test(lowerText)) categoryTags.push('terminal');
+  if (/debug|log|trace|stack|breakpoint/i.test(lowerText)) categoryTags.push('debug');
+  if (/test|spec|jest|mocha|cypress|unit test|integration/i.test(lowerText)) categoryTags.push('testing');
+  if (/api|endpoint|request|response|json|xml|rest|graphql/i.test(lowerText)) categoryTags.push('api');
+  if (/database|sql|query|table|mongodb|postgres|mysql|redis/i.test(lowerText)) categoryTags.push('database');
+
   // Web/URL patterns
-  if (/http|https|www\.|\.com|\.org|\.io|\.dev|\.app|localhost/i.test(lowerText)) tags.push('web');
-  if (/login|signin|signup|password|auth|account/i.test(lowerText)) tags.push('auth');
-  if (/dashboard|admin|panel|analytics/i.test(lowerText)) tags.push('dashboard');
-  
+  if (/http|https|www\.|\.com|\.org|\.io|\.dev|\.app|localhost|127\.0\.0\.1/i.test(lowerText)) categoryTags.push('web');
+  if (/login|signin|signup|password|auth|account|authentication|oauth/i.test(lowerText)) categoryTags.push('auth');
+  if (/dashboard|admin|panel|analytics|metrics/i.test(lowerText)) categoryTags.push('dashboard');
+
   // Communication patterns
-  if (/@|email|inbox|gmail|outlook|mail/i.test(lowerText)) tags.push('email');
-  if (/chat|message|slack|discord|teams|conversation/i.test(lowerText)) tags.push('chat');
-  if (/notification|notify|alert|reminder/i.test(lowerText)) tags.push('notification');
-  
+  if (/@|email|inbox|gmail|outlook|mail|mailto/i.test(lowerText)) categoryTags.push('email');
+  if (/chat|message|slack|discord|teams|conversation|whatsapp/i.test(lowerText)) categoryTags.push('chat');
+  if (/notification|notify|alert|reminder|push/i.test(lowerText)) categoryTags.push('notification');
+
   // Document/Content patterns
-  if (/document|doc|pdf|file|folder|directory/i.test(lowerText)) tags.push('document');
-  if (/image|photo|picture|screenshot|png|jpg|jpeg/i.test(lowerText)) tags.push('image');
-  if (/video|youtube|vimeo|mp4|stream/i.test(lowerText)) tags.push('video');
-  if (/table|spreadsheet|excel|csv|data/i.test(lowerText)) tags.push('data');
-  
+  if (/document|doc|pdf|file|folder|directory|upload|download/i.test(lowerText)) categoryTags.push('document');
+  if (/video|youtube|vimeo|mp4|stream|watch|play/i.test(lowerText)) categoryTags.push('video');
+  if (/table|spreadsheet|excel|csv|data|rows|columns/i.test(lowerText)) categoryTags.push('data');
+
   // UI/Design patterns
-  if (/button|click|menu|dropdown|modal|popup|dialog/i.test(lowerText)) tags.push('ui');
-  if (/design|figma|sketch|adobe|photoshop|canva/i.test(lowerText)) tags.push('design');
-  if (/settings|preferences|config|options|setup/i.test(lowerText)) tags.push('settings');
-  
+  if (/button|click|menu|dropdown|modal|popup|dialog|tooltip/i.test(lowerText)) categoryTags.push('ui');
+  if (/design|figma|sketch|adobe|photoshop|canva|prototype/i.test(lowerText)) categoryTags.push('design');
+  if (/settings|preferences|config|options|setup|configuration/i.test(lowerText)) categoryTags.push('settings');
+
   // Business/Finance patterns
-  if (/\$|price|cost|payment|invoice|billing|subscription/i.test(lowerText)) tags.push('finance');
-  if (/order|cart|checkout|purchase|buy|shop/i.test(lowerText)) tags.push('shopping');
-  if (/report|analytics|metrics|stats|chart|graph/i.test(lowerText)) tags.push('analytics');
-  
+  if (/\$|price|cost|payment|invoice|billing|subscription|paypal|stripe/i.test(lowerText)) categoryTags.push('finance');
+  if (/order|cart|checkout|purchase|buy|shop|ecommerce/i.test(lowerText)) categoryTags.push('shopping');
+
   // Social/Platform patterns
-  if (/github|gitlab|bitbucket|repo|repository|commit|pull|merge/i.test(lowerText)) tags.push('github');
-  if (/twitter|tweet|facebook|instagram|linkedin|social/i.test(lowerText)) tags.push('social');
-  if (/google|chrome|safari|firefox|browser/i.test(lowerText)) tags.push('browser');
-  if (/vscode|visual studio|intellij|xcode|editor|ide/i.test(lowerText)) tags.push('editor');
-  
-  // If no specific tags found, try to extract common nouns
-  if (tags.length === 0) {
-    // Look for capitalized words that might be app/product names
+  if (/github|gitlab|bitbucket|repo|repository|commit|pull|merge|branch/i.test(lowerText)) categoryTags.push('github');
+  if (/twitter|tweet|facebook|instagram|linkedin|social media/i.test(lowerText)) categoryTags.push('social');
+  if (/google|chrome|safari|firefox|edge|browser/i.test(lowerText)) categoryTags.push('browser');
+  if (/vscode|visual studio|intellij|xcode|editor|ide|sublime/i.test(lowerText)) categoryTags.push('editor');
+
+  // Phase 2: Smart keyword extraction (SECONDARY - only if we have space)
+  // Expanded noise words list
+  const noiseWords = new Set([
+    'the', 'be', 'to', 'of', 'and', 'a', 'in', 'that', 'have', 'i',
+    'it', 'for', 'not', 'on', 'with', 'he', 'as', 'you', 'do', 'at',
+    'this', 'but', 'his', 'by', 'from', 'they', 'we', 'say', 'her', 'she',
+    'or', 'an', 'will', 'my', 'one', 'all', 'would', 'there', 'their',
+    'what', 'so', 'up', 'out', 'if', 'about', 'who', 'get', 'which', 'go',
+    'when', 'make', 'can', 'like', 'time', 'no', 'just', 'him', 'know',
+    'take', 'people', 'into', 'year', 'your', 'good', 'some', 'could',
+    'them', 'see', 'other', 'than', 'then', 'now', 'look', 'only', 'come',
+    'its', 'over', 'think', 'also', 'back', 'after', 'use', 'two', 'how',
+    'our', 'work', 'first', 'well', 'way', 'even', 'new', 'want', 'because',
+    'any', 'these', 'give', 'day', 'most', 'us', 'is', 'was', 'are', 'been',
+    'has', 'had', 'were', 'said', 'did', 'having', 'may', 'should', 'am'
+  ]);
+
+  // Extract meaningful words (nouns, verbs, adjectives)
+  const words = lowerText
+    .replace(/[^\w\s]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length >= 4 && !noiseWords.has(w)); // Increased min length to 4
+
+  // Calculate word frequency
+  const wordFreq = new Map();
+  words.forEach(word => {
+    wordFreq.set(word, (wordFreq.get(word) || 0) + 1);
+  });
+
+  // Sort by frequency and uniqueness (prefer words that appear 2-3 times, not too common)
+  const sortedWords = Array.from(wordFreq.entries())
+    .filter(([word, count]) => count >= 1 && count <= 5) // Not too rare, not too common
+    .sort((a, b) => b[1] - a[1])
+    .map(([word]) => word);
+
+  // Add top keywords
+  keywordTags.push(...sortedWords.slice(0, 3));
+
+  // Phase 3: Extract capitalized words (app/product names) if needed
+  if (categoryTags.length === 0 && keywordTags.length === 0) {
     const capitalizedWords = ocrText.match(/\b[A-Z][a-z]{2,}\b/g) || [];
-    const uniqueCapitalized = [...new Set(capitalizedWords)].slice(0, 2);
-    uniqueCapitalized.forEach(word => {
-      if (word.length >= 3 && word.length <= 15) {
-        tags.push(word.toLowerCase());
-      }
-    });
+    const uniqueCapitalized = [...new Set(capitalizedWords)]
+      .filter(word => word.length >= 3 && word.length <= 15)
+      .slice(0, 3)
+      .map(w => w.toLowerCase());
+    keywordTags.push(...uniqueCapitalized);
   }
-  
-  // Remove duplicates and limit to 5 tags
-  const uniqueTags = [...new Set(tags)];
-  return uniqueTags.slice(0, 5);
+
+  // Combine: Category tags first (priority), then keyword tags (fill remaining slots)
+  const finalTags = [
+    ...new Set(categoryTags), // Remove duplicates from categories
+    ...keywordTags.filter(kw => !categoryTags.includes(kw)) // Add keywords not already in categories
+  ];
+
+  return finalTags.slice(0, 8);
 }
 
 // Run OCR in main process (background, doesn't require window)
@@ -741,7 +853,7 @@ async function runOCRInMainProcess(screenshotId, filePath) {
     }
     
     console.log(`[OCR-Main] File exists, starting Tesseract...`);
-    
+
     // Use simpler recognize API
     const result = await Tesseract.recognize(filePath, 'eng', {
       logger: m => {
@@ -750,25 +862,31 @@ async function runOCRInMainProcess(screenshotId, filePath) {
         }
       }
     });
-    
+
     const ocrText = result.data.text || '';
     const ocrConf = result.data.confidence || null;
-    
+
     console.log(`[OCR-Main] Extracted ${ocrText.length} chars, confidence: ${ocrConf}`);
-    
+
+    // Log sample of OCR text for debugging
+    if (ocrText.length > 0) {
+      const sample = ocrText.slice(0, 150).replace(/\n/g, ' ');
+      console.log(`[OCR-Main] Text sample: "${sample}${ocrText.length > 150 ? '...' : ''}"`);
+    }
+
     if (!ocrText.trim()) {
       console.log('[OCR-Main] No text found, skipping update');
       // Notify renderer that OCR is complete (even if no text)
       notifyRendererOCRComplete(screenshotId, null, []);
       return;
     }
-    
+
     // Generate smart filename and tags
     const originalName = path.basename(filePath);
     const smartName = generateSmartFilename(ocrText, originalName);
     const tags = generateTags(ocrText);
-    
-    console.log(`[OCR-Main] Smart name: ${smartName}, Tags: ${tags.join(', ')}`);
+
+    console.log(`[OCR-Main] Smart name: ${smartName}, Tags (${tags.length}): ${tags.join(', ')}`);
     
     // Rename file on disk
     let newStoragePath = filePath;
@@ -1489,10 +1607,10 @@ app.on('before-quit', () => {
 });
 
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
-app.on('will-quit', () => { 
-  globalShortcut.unregisterAll(); 
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
   if (folderWatcher) folderWatcher.close();
-  closeDatabase(); 
+  closeDatabase();
 });
 
 /* ====================== IPC ====================== */
@@ -1661,18 +1779,35 @@ ipcMain.handle('file:read', async (_e, filePath, useThumbnail = true) => {
       const thumbPath = getThumbnailPath(filePath);
       if (fs.existsSync(thumbPath)) {
         pathToRead = thumbPath;
-        console.log(`[FileRead] Using thumbnail: ${thumbPath}`);
+        console.log(`[FileRead] Using thumbnail: ${path.basename(thumbPath)}`);
       } else {
         // Generate thumbnail if it doesn't exist
         const generated = generateThumbnail(filePath);
         if (generated && fs.existsSync(generated)) {
           pathToRead = generated;
-          console.log(`[FileRead] Generated and using thumbnail: ${generated}`);
+          console.log(`[FileRead] Generated thumbnail: ${path.basename(generated)}`);
+        } else {
+          console.log(`[FileRead] No thumbnail, using original: ${path.basename(filePath)}`);
         }
       }
+    } else {
+      console.log(`[FileRead] Loading FULL-RES: ${path.basename(filePath)}`);
     }
 
-    return { data: fs.readFileSync(pathToRead).toString('base64'), error: null };
+    // Check cache first for instant re-renders
+    const cacheKey = pathToRead;
+    const cachedData = fileCache.get(cacheKey);
+    if (cachedData) {
+      console.log(`[FileRead] Cache HIT: ${path.basename(pathToRead)}`);
+      return { data: cachedData, error: null };
+    }
+
+    // Cache miss - read from disk and cache it
+    console.log(`[FileRead] Cache MISS: ${path.basename(pathToRead)}`);
+    const data = fs.readFileSync(pathToRead).toString('base64');
+    fileCache.set(cacheKey, data);
+
+    return { data, error: null };
   }
   catch (error) { return { data: null, error: error.message }; }
 });
@@ -1723,6 +1858,23 @@ ipcMain.handle('file:open-screenshots-folder', async () => {
   }
 });
 
+ipcMain.handle('cache:stats', async () => {
+  try {
+    return { data: fileCache.getStats(), error: null };
+  } catch (error) {
+    return { data: null, error: error.message };
+  }
+});
+
+ipcMain.handle('cache:clear', async () => {
+  try {
+    fileCache.clear();
+    return { data: true, error: null };
+  } catch (error) {
+    return { data: null, error: error.message };
+  }
+});
+
 ipcMain.handle('file:share', async (_e, filePath) => {
   try {
     if (process.platform === 'darwin') {
@@ -1747,7 +1899,15 @@ ipcMain.handle('file:share', async (_e, filePath) => {
 });
 
 ipcMain.handle('file:delete', async (_e, filePath) => new Promise((resolve, reject) => {
-  fs.unlink(filePath, (err) => err ? reject(err) : resolve(true));
+  fs.unlink(filePath, (err) => {
+    if (!err) {
+      // Invalidate cache entries for this file and its thumbnail
+      fileCache.invalidate(filePath);
+      const thumbPath = getThumbnailPath(filePath);
+      fileCache.invalidate(thumbPath);
+    }
+    err ? reject(err) : resolve(true);
+  });
 }));
 
 ipcMain.handle('file:rename', async (_e, { oldPath, newName }) => {
@@ -1773,11 +1933,23 @@ ipcMain.handle('file:rename', async (_e, { oldPath, newName }) => {
       const uniqueName = `${base}_${Date.now()}${ext}`;
       const uniquePath = path.join(dir, uniqueName);
       fs.renameSync(oldPath, uniquePath);
+
+      // Invalidate cache for old path and its thumbnail
+      fileCache.invalidate(oldPath);
+      const oldThumbPath = getThumbnailPath(oldPath);
+      fileCache.invalidate(oldThumbPath);
+
       sendLog(`Renamed file: ${oldPath} -> ${uniquePath}`);
       return { newPath: uniquePath, error: null };
     }
-    
+
     fs.renameSync(oldPath, newPath);
+
+    // Invalidate cache for old path and its thumbnail
+    fileCache.invalidate(oldPath);
+    const oldThumbPath = getThumbnailPath(oldPath);
+    fileCache.invalidate(oldThumbPath);
+
     sendLog(`Renamed file: ${oldPath} -> ${newPath}`);
     return { newPath, error: null };
   } catch (error) {
@@ -2473,24 +2645,39 @@ function startFolderWatcher() {
   
   folderWatcher.on('addDir', (dirPath) => {
     if (dirPath === watchDir) return;
-    
+
     const folderName = path.basename(dirPath);
     const db = getDatabase();
-    
+
     // Check if folder already exists
     const existing = db.prepare('SELECT id FROM folders WHERE name = ?').get(folderName);
     if (existing) return;
-    
+
     // Create folder in database
     const folderId = crypto.randomUUID();
     db.prepare('INSERT INTO folders (id, name) VALUES (?, ?)').run(folderId, folderName);
     sendLog(`Detected new folder: ${folderName}`);
-    
+
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('folder-created', { id: folderId, name: folderName });
     }
   });
-  
+
+  // Invalidate cache when files change or are deleted
+  folderWatcher.on('change', (filePath) => {
+    fileCache.invalidate(filePath);
+    const thumbPath = getThumbnailPath(filePath);
+    fileCache.invalidate(thumbPath);
+    sendLog(`File changed, cache invalidated: ${path.basename(filePath)}`);
+  });
+
+  folderWatcher.on('unlink', (filePath) => {
+    fileCache.invalidate(filePath);
+    const thumbPath = getThumbnailPath(filePath);
+    fileCache.invalidate(thumbPath);
+    sendLog(`File deleted, cache invalidated: ${path.basename(filePath)}`);
+  });
+
   folderWatcher.on('error', (error) => {
     sendLog(`Folder watcher error: ${error}`, 'error');
   });
