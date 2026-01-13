@@ -17,9 +17,10 @@ interface ScreenshotModalProps {
   screenshot: Screenshot;
   onClose: () => void;
   onUpdate: () => void;
+  onFavoriteToggle?: (delta: number) => void;
 }
 
-export function ScreenshotModal({ screenshot, onClose, onUpdate }: ScreenshotModalProps) {
+export function ScreenshotModal({ screenshot, onClose, onUpdate, onFavoriteToggle }: ScreenshotModalProps) {
   const [newTag, setNewTag] = useState('');
   const [isFavorite, setIsFavorite] = useState(screenshot.is_favorite);
   const [imageUrl, setImageUrl] = useState<string>('');
@@ -89,6 +90,8 @@ export function ScreenshotModal({ screenshot, onClose, onUpdate }: ScreenshotMod
       setIsFavorite(!nextState);
       console.error('Failed to toggle favorite:', error);
     } else {
+      // Update favorite count in Dashboard immediately
+      onFavoriteToggle?.(nextState ? 1 : -1);
       // Sync parent on success
       onUpdate();
     }
