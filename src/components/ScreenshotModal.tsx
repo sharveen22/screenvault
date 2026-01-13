@@ -59,7 +59,8 @@ export function ScreenshotModal({ screenshot, onClose, onUpdate }: ScreenshotMod
     // Use requestIdleCallback or setTimeout to defer image loading slightly
     // This allows the modal to open quickly and show UI first
     requestIdleCallback(async () => {
-      const { data } = await window.electronAPI!.file.read(screenshot.storage_path);
+      // Load full-resolution image (useThumbnail = false) for modal
+      const { data } = await window.electronAPI!.file.read(screenshot.storage_path, false);
       setImageUrl(`data:image/png;base64,${data}`);
       setImageLoading(false);
     });
@@ -192,7 +193,7 @@ export function ScreenshotModal({ screenshot, onClose, onUpdate }: ScreenshotMod
       onClick={onClose}
     >
       <div
-        className="bg-[#e9e6e4] rounded-none shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-hidden flex flex-col border border-[#94918f]"
+        className="bg-[#e9e6e4] rounded-none shadow-2xl max-w-[95vw] w-full max-h-[90vh] overflow-hidden flex flex-col border border-[#94918f]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between p-6 border-b border-[#94918f]">
@@ -244,7 +245,8 @@ export function ScreenshotModal({ screenshot, onClose, onUpdate }: ScreenshotMod
               <img
                 src={imageUrl}
                 alt={screenshot.file_name}
-                className="max-w-full max-h-full object-contain shadow-xl"
+                className="w-full h-full object-contain shadow-xl"
+                style={{ maxWidth: '100%', maxHeight: '100%' }}
               />
             ) : (
               <div className="flex flex-col items-center justify-center">
