@@ -71,6 +71,59 @@ function screenshotsDir() {
   return dir;
 }
 
+function thumbnailsDir() {
+  const dir = path.join(screenshotsDir(), '.thumbnails');
+  ensureDir(dir);
+  return dir;
+}
+
+function getThumbnailPath(originalPath) {
+  const fileName = path.basename(originalPath);
+  const ext = path.extname(fileName);
+  const base = path.basename(fileName, ext);
+  return path.join(thumbnailsDir(), `${base}_thumb.jpg`);
+}
+
+// Generate thumbnail for an image (300x200)
+function generateThumbnail(imagePath) {
+  try {
+    const thumbnailPath = getThumbnailPath(imagePath);
+
+    // Skip if thumbnail already exists
+    if (fs.existsSync(thumbnailPath)) {
+      return thumbnailPath;
+    }
+
+    // Load image and resize
+    const img = nativeImage.createFromPath(imagePath);
+    if (img.isEmpty()) {
+      console.error('[Thumbnail] Failed to load image:', imagePath);
+      return null;
+    }
+
+    // Resize to 300px width, maintain aspect ratio
+    const size = img.getSize();
+    const targetWidth = 300;
+    const targetHeight = Math.round((size.height / size.width) * targetWidth);
+
+    const resized = img.resize({
+      width: targetWidth,
+      height: targetHeight,
+      quality: 'good'
+    });
+
+    // Save as JPEG with 80% quality
+    const jpegData = resized.toJPEG(80);
+    fs.writeFileSync(thumbnailPath, jpegData);
+
+    console.log(`[Thumbnail] Generated: ${thumbnailPath} (${jpegData.length} bytes)`);
+    return thumbnailPath;
+  } catch (error) {
+    console.error('[Thumbnail] Generation failed:', error);
+    return null;
+  }
+}
+
 function timestampName() {
   const d = new Date();
   const pad = (n) => String(n).padStart(2, '0');
@@ -554,11 +607,24 @@ function saveScreenshotToDatabase(filePath) {
     );
     
     console.log(`[SaveDB] Screenshot saved to database: ${id} - ${fileName}`);
-    
+
+    // Generate thumbnail in background (don't block)
+    setTimeout(() => {
+      const thumbPath = generateThumbnail(filePath);
+      if (thumbPath) {
+        try {
+          db.prepare('UPDATE screenshots SET thumbnail_path = ? WHERE id = ?').run(thumbPath, id);
+          console.log(`[SaveDB] Thumbnail generated and saved: ${thumbPath}`);
+        } catch (err) {
+          console.error(`[SaveDB] Failed to update thumbnail_path:`, err);
+        }
+      }
+    }, 0);
+
     // Trigger OCR processing in main process (runs in background)
     console.log(`[SaveDB] Starting OCR for ${id}`);
     runOCRInMainProcess(id, filePath);
-    
+
     return id;
   } catch (e) {
     console.error(`[SaveDB] Error: ${e}`);
@@ -1586,8 +1652,28 @@ ipcMain.handle('db:query', async (_e, { table, operation, data, where, orderBy, 
   }
 });
 
-ipcMain.handle('file:read', async (_e, filePath) => {
-  try { return { data: fs.readFileSync(filePath).toString('base64'), error: null }; }
+ipcMain.handle('file:read', async (_e, filePath, useThumbnail = true) => {
+  try {
+    let pathToRead = filePath;
+
+    // Try to use thumbnail if requested
+    if (useThumbnail) {
+      const thumbPath = getThumbnailPath(filePath);
+      if (fs.existsSync(thumbPath)) {
+        pathToRead = thumbPath;
+        console.log(`[FileRead] Using thumbnail: ${thumbPath}`);
+      } else {
+        // Generate thumbnail if it doesn't exist
+        const generated = generateThumbnail(filePath);
+        if (generated && fs.existsSync(generated)) {
+          pathToRead = generated;
+          console.log(`[FileRead] Generated and using thumbnail: ${generated}`);
+        }
+      }
+    }
+
+    return { data: fs.readFileSync(pathToRead).toString('base64'), error: null };
+  }
   catch (error) { return { data: null, error: error.message }; }
 });
 
@@ -2208,10 +2294,23 @@ async function importSingleFileToFolder(sourcePath, folderId, destFolderPath) {
     );
     
     sendLog(`Imported file ${finalFileName} to folder ${path.basename(destFolderPath)}`);
-    
+
+    // Generate thumbnail in background
+    setTimeout(() => {
+      const thumbPath = generateThumbnail(finalPath);
+      if (thumbPath) {
+        try {
+          db.prepare('UPDATE screenshots SET thumbnail_path = ? WHERE id = ?').run(thumbPath, id);
+          console.log(`[ImportFolder] Thumbnail generated: ${thumbPath}`);
+        } catch (err) {
+          console.error(`[ImportFolder] Failed to update thumbnail_path:`, err);
+        }
+      }
+    }, 0);
+
     // Trigger OCR processing
     runOCRInMainProcess(id, finalPath);
-    
+
     return id;
   } catch (error) {
     sendLog(`importSingleFileToFolder error: ${error}`, 'error');
@@ -2289,7 +2388,20 @@ async function importSingleFile(sourcePath, folderId = null) {
     );
     
     sendLog(`Imported file: ${finalFileName} (id: ${id})`);
-    
+
+    // Generate thumbnail in background
+    setTimeout(() => {
+      const thumbPath = generateThumbnail(sourcePath);
+      if (thumbPath) {
+        try {
+          db.prepare('UPDATE screenshots SET thumbnail_path = ? WHERE id = ?').run(thumbPath, id);
+          console.log(`[Import] Thumbnail generated: ${thumbPath}`);
+        } catch (err) {
+          console.error(`[Import] Failed to update thumbnail_path:`, err);
+        }
+      }
+    }, 0);
+
     // Trigger OCR processing
     runOCRInMainProcess(id, sourcePath);
     
