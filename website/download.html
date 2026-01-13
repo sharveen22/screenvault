@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Download ScreenVault - Thank You!</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-primary: #e9e6e4;
+            --text-primary: #161419;
+            --font-title: "Space Grotesk", sans-serif;
+            --font-body: "Inter", sans-serif;
+        }
+
+        body {
+            font-family: var(--font-body);
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 600px;
+            text-align: center;
+            background: white;
+            padding: 60px 40px;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1);
+        }
+
+        .checkmark {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: #161419;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 30px;
+            animation: scaleIn 0.5s ease;
+        }
+
+        .checkmark svg {
+            width: 40px;
+            height: 40px;
+            stroke: #e9e6e4;
+            stroke-width: 3;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            fill: none;
+            animation: drawCheck 0.5s ease 0.3s forwards;
+            stroke-dasharray: 50;
+            stroke-dashoffset: 50;
+        }
+
+        @keyframes scaleIn {
+            from { transform: scale(0); }
+            to { transform: scale(1); }
+        }
+
+        @keyframes drawCheck {
+            to { stroke-dashoffset: 0; }
+        }
+
+        h1 {
+            font-family: var(--font-title);
+            font-size: 36px;
+            font-weight: 700;
+            margin-bottom: 20px;
+            letter-spacing: -1px;
+        }
+
+        p {
+            font-size: 18px;
+            line-height: 1.6;
+            opacity: 0.8;
+            margin-bottom: 30px;
+        }
+
+        .download-status {
+            background: #f5f3f1;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+        }
+
+        .download-status p {
+            margin: 0;
+            font-weight: 500;
+        }
+
+        .manual-download {
+            display: inline-block;
+            background: var(--text-primary);
+            color: var(--bg-primary);
+            padding: 16px 36px;
+            text-decoration: none;
+            font-family: var(--font-title);
+            font-weight: 600;
+            font-size: 14px;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            border: 2px solid var(--text-primary);
+            transition: all 0.3s ease;
+            margin-bottom: 20px;
+        }
+
+        .manual-download:hover {
+            background: transparent;
+            color: var(--text-primary);
+            transform: translateY(-2px);
+            box-shadow: 4px 4px 0px rgba(22, 20, 25, 0.1);
+        }
+
+        .back-link {
+            display: inline-block;
+            color: var(--text-primary);
+            text-decoration: none;
+            opacity: 0.6;
+            transition: opacity 0.2s;
+            font-size: 14px;
+        }
+
+        .back-link:hover {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="checkmark">
+            <svg viewBox="0 0 52 52">
+                <polyline points="14 27 22 35 38 19"/>
+            </svg>
+        </div>
+        
+        <h1>Thank You!</h1>
+        <p>Your download should start automatically in a moment.</p>
+        
+        <div class="download-status">
+            <p id="status">Preparing your download...</p>
+        </div>
+
+        <a href="https://github.com/sharveen22/screenvault/releases/download/v1.0.0/ScreenVault-1.0.0.dmg" class="manual-download" download>Click here if download doesn't start</a>
+        
+        <br><br>
+        
+        <a href="index.html" class="back-link">← Back to homepage</a>
+    </div>
+
+    <script>
+        // Auto-download after 1 second
+        setTimeout(() => {
+            document.getElementById('status').textContent = 'Download starting...';
+            
+            // Trigger download from GitHub Releases
+            const link = document.createElement('a');
+            link.href = 'https://github.com/sharveen22/screenvault/releases/download/v1.0.0/ScreenVault-1.0.0.dmg';
+            link.download = 'ScreenVault-1.0.0.dmg';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            setTimeout(() => {
+                document.getElementById('status').textContent = '✓ Download started!';
+            }, 500);
+        }, 1000);
+    </script>
+</body>
+</html>
