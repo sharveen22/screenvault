@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useElectronScreenshots } from '../hooks/useElectronScreenshots';
 import { db } from '../lib/database';
 import { Camera, Search, Folder, Star, Plus, Upload, FolderOpen, ChevronDown, Trash2, Keyboard } from 'lucide-react';
@@ -172,8 +172,9 @@ export function Dashboard() {
     return path.join(' > ');
   };
 
-  const rootFolders = folders.filter(f => !f.parent_id);
-  const getChildFolders = (parentId: string) => folders.filter(f => f.parent_id === parentId);
+  // Memoize folder computations to prevent unnecessary recalculations
+  const rootFolders = useMemo(() => folders.filter(f => !f.parent_id), [folders]);
+  const getChildFolders = useCallback((parentId: string) => folders.filter(f => f.parent_id === parentId), [folders]);
 
   // Mosaic renderer
   const renderMosaic = (images: string[], fallbackIcon: React.ReactNode) => {

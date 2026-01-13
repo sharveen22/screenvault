@@ -1596,6 +1596,28 @@ ipcMain.handle('file:exists', async (_e, filePath) => {
   catch (error) { return { data: false, error: error.message }; }
 });
 
+// Batch file existence check - much faster than individual checks
+ipcMain.handle('file:existsBatch', async (_e, filePaths) => {
+  try {
+    if (!Array.isArray(filePaths)) {
+      return { data: [], error: 'filePaths must be an array' };
+    }
+
+    // Check all files and return array of booleans in same order
+    const results = filePaths.map(filePath => {
+      try {
+        return fs.existsSync(filePath);
+      } catch {
+        return false;
+      }
+    });
+
+    return { data: results, error: null };
+  } catch (error) {
+    return { data: [], error: error.message };
+  }
+});
+
 ipcMain.handle('file:reveal', async (_e, filePath) => {
   try {
     shell.showItemInFolder(filePath);
