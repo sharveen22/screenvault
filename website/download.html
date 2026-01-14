@@ -154,7 +154,7 @@
             <p id="status">Preparing your download...</p>
         </div>
 
-        <a href="https://github.com/sharveen22/screenvault/releases/download/v1.0.0/ScreenVault-1.0.0.dmg" class="manual-download" download>Click here if download doesn't start</a>
+        <a href="https://github.com/sharveen22/screenvault/releases/download/v1.0.1/ScreenVault-1.0.0-arm64.dmg" class="manual-download" download>Click here if download doesn't start</a>
         
         <br><br>
         
@@ -166,10 +166,15 @@
         setTimeout(() => {
             document.getElementById('status').textContent = 'Download starting...';
             
-            // Trigger download from GitHub Releases
+            // Detect user's architecture and download appropriate file
+            const isAppleSilicon = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 0;
+            const downloadUrl = isAppleSilicon
+                ? 'https://github.com/sharveen22/screenvault/releases/download/v1.0.1/ScreenVault-1.0.0-arm64.dmg'
+                : 'https://github.com/sharveen22/screenvault/releases/download/v1.0.1/ScreenVault-1.0.0-arm64.dmg'; // Default to ARM64 as it's universal
+
             const link = document.createElement('a');
-            link.href = 'https://github.com/sharveen22/screenvault/releases/download/v1.0.0/ScreenVault-1.0.0.dmg';
-            link.download = 'ScreenVault-1.0.0.dmg';
+            link.href = downloadUrl;
+            link.download = downloadUrl.split('/').pop();
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
