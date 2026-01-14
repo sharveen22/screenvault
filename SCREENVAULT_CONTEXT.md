@@ -922,6 +922,7 @@ I'm continuing work on ScreenVault, an Electron-based macOS screenshot managemen
   - Real-time favorite count updates (instant, no delay)
   - Edited images refresh immediately in gallery
   - Search bar moved to screenshots section
+  - Simplified window title
 - ✅ **UI Design Improvements (PR #48):**
   - Left sidebar layout (220px, organized sections)
   - Rounded corners throughout entire app
@@ -934,6 +935,10 @@ I'm continuing work on ScreenVault, an Electron-based macOS screenshot managemen
   - Removed mosaic image previews (~150 lines of code)
   - Instant folder rendering (no image loading delays)
   - Fixed double scrollbar issue in gallery section
+  - Consistent dark gradient for all folders
+  - Removed mosaic image previews (~150 lines of code)
+  - Instant folder rendering (no image loading)
+  - Fixed double scrollbar issue in gallery
   - Single clean scrollbar for better UX
 
 **Latest PRs:**
@@ -948,10 +953,10 @@ I'm continuing work on ScreenVault, an Electron-based macOS screenshot managemen
 - PR #45: Real-time Favorites + Edited Image Refresh + UI Fixes (merged)
 - PR #47: Marketing Website Separation (merged)
 - PR #48: UI Design Improvements (merged)
-- PR #50: Folder UI Refinements (merged) ← **LATEST**
+- PR #50: Folder UI Refinements (merged) ← **LATEST PR**
 
-**Current Branch:** `main` (all changes merged)
-**Status:** Production-ready with optimized UI, performance, and clean folder design
+**Current Branch:** `main` (all PRs merged)
+**Status:** All features complete, production-ready with optimized folder UI
 
 **Quick Build & Launch:**
 ```bash
