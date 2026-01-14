@@ -146,7 +146,7 @@
 - Better visual hierarchy makes features more discoverable
 - Improved usability with always-visible shortcuts
 
-### 2. Marketing Website Separation (PR #47)
+### 3. Marketing Website Separation (PR #47)
 **Complete separation of marketing landing page from Electron app**
 
 #### Dedicated Website Directory 🌐
@@ -186,7 +186,7 @@
 - Updated `README.md` - Added website structure documentation
 - Created `website/README.md` - Deployment instructions for all platforms
 
-### 3. UI Fixes & Real-time Updates (PR #45)
+### 4. UI Fixes & Real-time Updates (PR #45)
 **Real-time favorite counts, edited image refresh, and UI improvements**
 
 #### Real-time Favorite Count Updates ⭐
@@ -232,7 +232,7 @@
 - `index.html` - Simplified title tag
 - `SCREENVAULT_CONTEXT.md` - Updated documentation
 
-### 4. Performance Optimizations Phase 3 (PR #44) ⚡⚡⚡
+### 5. Performance Optimizations Phase 3 (PR #44) ⚡⚡⚡
 **LRU Cache + Smart OCR + Full-Resolution Viewing**
 
 #### LRU File Cache (Optimization #11)
@@ -313,7 +313,7 @@
 - OCR tags: **6-8 relevant tags** (vs 1-2 generic)
 - Memory: **Controlled at 50MB** (cache limit)
 
-### 5. Performance Optimizations Phase 2 (PR #42, #43) ⚡⚡
+### 6. Performance Optimizations Phase 2 (PR #42, #43) ⚡⚡
 **MASSIVE performance boost - Gallery now 10-20x faster with 100x less memory**
 
 #### Debounce & State Updates (PR #42)
@@ -370,7 +370,7 @@
 - Database queries **40% fewer** through smart debouncing
 - **Ready for production** - handles power users with massive libraries!
 
-### 6. Performance Optimizations Phase 1 (PR #40, #41) ⚡
+### 7. Performance Optimizations Phase 1 (PR #40, #41) ⚡
 **Foundational performance improvements - 5-10x faster overall**
 
 #### Database Indexes (PR #40)
@@ -395,7 +395,7 @@
 - Faster folder switching and view changes
 - 50-70% fewer unnecessary operations
 
-### 7. UI Enhancements & Bug Fixes (PR #38)
+### 8. UI Enhancements & Bug Fixes (PR #38)
 - **Screenshot Tile Display:** Changed from object-cover to object-contain so users can see entire screenshot without cropping
 - **Folder Section Redesign:**
   - Single-row horizontal scroll layout (was 2-row grid)
@@ -413,7 +413,7 @@
   - Press Escape key to close modal
 - **Real-time Favorites Count:** Fixed bug where favorites count wasn't updating in real-time
 
-### 8. Drag-and-Drop to External Apps (PR #39)
+### 9. Drag-and-Drop to External Apps (PR #39)
 - **External App Support:** Drag screenshots from ScreenVault directly to external applications
   - Works with WhatsApp, VS Code, Slack, and any app that accepts image files
   - Uses Electron's File API to create actual file objects during drag operations
@@ -421,12 +421,12 @@
 - **Native File Drag:** Implemented proper file:// protocol support with IPC handlers
 - **Drag Preview:** Blue box with camera emoji shown during drag operations
 
-### 9. Quick Folder Access (PR #39)
+### 10. Quick Folder Access (PR #39)
 - **Toolbar Button:** Added folder icon button in toolbar (between keyboard shortcuts and CAPTURE)
 - **One-Click Access:** Opens ~/Pictures/ScreenVault folder in Finder instantly
 - **IPC Handler:** Added file:open-screenshots-folder handler in main process
 
-### 10. Fixed Duplicate Screenshots & Editor Save (PR #32)
+### 11. Fixed Duplicate Screenshots & Editor Save (PR #32)
 - **No More Duplicates:** Added duplicate check in saveScreenshotToDatabase() to prevent double-saving
 - **Editor Save Fixed:** When saving from editor, updates existing screenshot instead of creating duplicate
 - **Handles OCR Renames:** Editor properly finds and updates screenshots even after OCR renames them
@@ -918,7 +918,6 @@ I'm continuing work on ScreenVault, an Electron-based macOS screenshot managemen
   - Dedicated `/website` directory for landing page
   - Vercel configuration for automatic deployment
   - Complete separation from Electron app
-  - Independent deployment pipeline
 - ✅ **UI Fixes & Real-time Updates (PR #45):**
   - Real-time favorite count updates (instant, no delay)
   - Edited images refresh immediately in gallery
@@ -932,6 +931,10 @@ I'm continuing work on ScreenVault, an Electron-based macOS screenshot managemen
   - Always-visible keyboard shortcuts
 - ✅ **Folder UI Refinements (PR #50):** 🔥 LATEST!
   - Compact folder cards (120px, 25% smaller)
+  - Consistent dark gradient (#2a2730 → #161419) for all folders
+  - Removed mosaic image previews (~150 lines of code)
+  - Instant folder rendering (no image loading delays)
+  - Fixed double scrollbar issue in gallery section
   - Consistent dark gradient for all folders
   - Removed mosaic image previews (~150 lines of code)
   - Instant folder rendering (no image loading)
@@ -1006,6 +1009,7 @@ gh pr create --title "PR Title" --body "Description
 - `src/components/Editor.tsx` - Annotation editor (full-res images)
 - `website/` - Marketing landing page (separate deployment)
 - `vercel.json` - Vercel deployment configuration
+- `src/lib/ocr.ts` - OCR text extraction (renderer-side)
 - `SCREENVAULT_CONTEXT.md` - Complete project documentation (THIS FILE)
 - `OPTIMIZATION_*.md` - Performance optimization documentation
 
@@ -1018,6 +1022,7 @@ gh pr create --title "PR Title" --body "Description
 - **OCR Tags:** 3-phase algorithm (categories → keywords → capitalized), 8 tags max
 - **Full-res viewing:** Modal and editor use `useThumbnail: false` for crystal clear images
 - **Memory:** 15MB gallery + 50MB cache = 65MB total (vs 300MB before optimizations)
+- **Folder cards:** No image loading, instant rendering with dark gradients
 
 Please read full context from SCREENVAULT_CONTEXT.md in the workspace.
 

@@ -437,9 +437,7 @@ export function Gallery({ searchQuery, activeView, onDropSuccess, captureStatus,
   const getColumnCount = (width: number) => {
     if (width < 640) return 2; // sm
     if (width < 768) return 3; // md
-    if (width < 1024) return 4; // lg
-    if (width < 1280) return 5; // xl
-    return 6; // 2xl+
+    return 4; // lg and above - max 4 columns for less clutter
   };
 
   const containerWidth = containerRef.current?.offsetWidth || windowSize.width - 100;
@@ -484,9 +482,10 @@ export function Gallery({ searchQuery, activeView, onDropSuccess, captureStatus,
     if (!row) return null;
 
     return (
-      <div className="grid gap-3 mb-3" style={{
+      <div className="grid gap-4 mb-4 px-4" style={{
         gridTemplateColumns: `repeat(${columnCount}, minmax(0, 1fr))`,
-        padding: '0 2px'
+        paddingTop: index === 0 ? '16px' : '0',
+        paddingBottom: index === screenshotRows.length - 1 ? '16px' : '0'
       }}>
         {row.map((screenshot) => (
           <ScreenshotCard
@@ -506,16 +505,14 @@ export function Gallery({ searchQuery, activeView, onDropSuccess, captureStatus,
   };
 
   return (
-    <>
-      <div ref={containerRef} style={{ width: '100%', height: 'calc(100vh - 280px)' }}>
-        <Virtuoso
-          data={screenshotRows}
-          totalCount={screenshotRows.length}
-          itemContent={renderRow}
-          overscan={2}
-          style={{ height: '100%' }}
-        />
-      </div>
+    <div ref={containerRef} style={{ flex: 1, minHeight: 0, position: 'relative', display: 'flex', flexDirection: 'column' }}>
+      <Virtuoso
+        data={screenshotRows}
+        totalCount={screenshotRows.length}
+        itemContent={renderRow}
+        overscan={2}
+        style={{ height: '100%', width: '100%' }}
+      />
 
       {selectedScreenshot && (
         <ScreenshotModal
@@ -525,7 +522,7 @@ export function Gallery({ searchQuery, activeView, onDropSuccess, captureStatus,
           onFavoriteToggle={onFavoriteToggle}
         />
       )}
-    </>
+    </div>
   );
 }
 
