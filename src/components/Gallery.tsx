@@ -569,8 +569,7 @@ function ScreenshotCard({
       onClick={() => onSelect(screenshot)}
       draggable
       onDragStart={(e) => onDragStart(e, screenshot)}
-      className="group relative bg-transparent border border-[#94918f] overflow-hidden hover:border-[#161419] transition-all cursor-move h-full"
-      style={{ borderRadius: 0 }}
+      className="group relative bg-transparent border border-[#94918f] rounded-lg overflow-hidden hover:border-[#161419] hover:shadow-lg hover:-translate-y-1 transition-all duration-200 cursor-move h-full"
     >
       <div
         className="aspect-video bg-[#dcd9d7] overflow-hidden relative"
@@ -594,10 +593,10 @@ function ScreenshotCard({
         </div>
       </div>
 
-      <div className="absolute top-1 right-1 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
         <button
           onClick={(e) => onToggleFavorite(screenshot, e)}
-          className="p-1 bg-[#e9e6e4] border border-[#161419] text-[#161419] hover:bg-[#161419] hover:text-[#e9e6e4] transition-colors"
+          className="p-1.5 bg-[#e9e6e4] border border-[#161419] text-[#161419] rounded-md hover:bg-[#161419] hover:text-[#e9e6e4] shadow-md hover:shadow-lg transition-all hover:scale-110"
         >
           <Star className={`w-3 h-3 ${screenshot.is_favorite ? 'fill-[#161419]' : ''}`} />
         </button>
@@ -606,26 +605,26 @@ function ScreenshotCard({
             e.stopPropagation();
             window.electronAPI?.file.reveal(screenshot.storage_path);
           }}
-          className="p-1 bg-[#e9e6e4] border border-[#161419] text-[#161419] hover:bg-[#161419] hover:text-[#e9e6e4] transition-colors"
+          className="p-1.5 bg-[#e9e6e4] border border-[#161419] text-[#161419] rounded-md hover:bg-[#161419] hover:text-[#e9e6e4] shadow-md hover:shadow-lg transition-all hover:scale-110"
         >
           <FolderOpen className="w-3 h-3" />
         </button>
         <button
           onClick={(e) => onDelete(screenshot, e)}
-          className="p-1 bg-[#e9e6e4] border border-[#161419] text-[#161419] hover:bg-red-600 hover:text-white hover:border-red-600 transition-colors"
+          className="p-1.5 bg-[#e9e6e4] border border-[#161419] text-[#161419] rounded-md hover:bg-red-600 hover:text-white hover:border-red-600 shadow-md hover:shadow-lg transition-all hover:scale-110"
         >
           <Trash2 className="w-3 h-3" />
         </button>
       </div>
 
       {screenshot.is_favorite && !isLikelyProcessing && (
-        <div className="absolute top-1 left-1">
+        <div className="absolute top-2 left-2 bg-[#e9e6e4]/90 rounded-full p-1 shadow-md">
           <Star className="w-3 h-3 fill-[#161419] text-[#161419]" />
         </div>
       )}
 
       {isLikelyProcessing && (
-        <div className="absolute top-1 left-1 flex items-center gap-1 bg-[#161419] text-[#e9e6e4] px-1.5 py-0.5 text-[10px]">
+        <div className="absolute top-2 left-2 flex items-center gap-1 bg-[#161419] text-[#e9e6e4] px-2 py-1 rounded-md text-[10px] shadow-md">
           <Loader2 className="w-2.5 h-2.5 animate-spin" />
           <span>Processing</span>
         </div>
@@ -639,11 +638,11 @@ function ScreenshotCard({
           {formatDate(screenshot.created_at)}
         </div>
         {screenshot.custom_tags.length > 0 && (
-          <div className="flex gap-0.5 mt-1 flex-wrap">
+          <div className="flex gap-1 mt-1.5 flex-wrap">
             {screenshot.custom_tags.slice(0, 2).map((tag) => (
               <span
                 key={tag}
-                className="text-[8px] px-1 py-0.5 border border-[#161419] text-[#161419] rounded-none uppercase tracking-wider"
+                className="text-[8px] px-1.5 py-0.5 border border-[#161419] text-[#161419] rounded-md uppercase tracking-wider"
               >
                 {tag}
               </span>
