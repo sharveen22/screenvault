@@ -25,7 +25,77 @@
 
 ## 🎯 LATEST FEATURES (January 14, 2026)
 
-### 1. Marketing Website Separation (PR #47) 🔥 NEWEST!
+### 1. UI Design Improvements (PR #48) 🔥 NEWEST!
+**Major UI/UX redesign with rounded corners, left sidebar, and enhanced visual hierarchy**
+
+#### Left Sidebar Layout (220px) 🎨
+- **Moved toolbar from top to left:** Vertical sidebar with organized sections
+- **Main Actions Section:**
+  - Capture button (dark background, primary action)
+  - All Screenshots navigation (with active state)
+  - Favorites navigation (with active state)
+- **Tools Section:**
+  - Import dropdown (Files/Folder)
+  - Open Folder quick access
+- **Shortcuts Section:**
+  - Always-visible keyboard shortcuts
+  - Larger, readable font sizes (`text-sm`)
+  - Visual key representations (⌘, ⇧, etc.)
+- **Better Space Utilization:**
+  - More vertical space for screenshot gallery
+  - Cleaner, more intuitive layout
+  - Modern desktop app feel (like Finder, VS Code, Spotify)
+
+#### Rounded Corners Throughout 🔵
+- **Sidebar buttons:** `rounded-xl` with hover scale effects
+- **Folder cards:** `rounded-lg` with enhanced shadows
+- **Screenshot cards:** `rounded-lg` with smooth hover animations
+- **Modal:** `rounded-2xl` for very polished look
+- **Action buttons:** `rounded-lg` or `rounded-md` throughout
+- **Input fields:** `rounded-lg` with focus shadows
+- **Tags & badges:** `rounded-md` for subtle roundness
+- **Dropdowns/menus:** `rounded-lg` with shadows
+- **All interactive elements:** Consistent rounded styling
+
+#### Subtle Shadows & Elevation ✨
+- **Screenshot cards:** `hover:shadow-lg` + `-translate-y-1` effect
+- **Folder cards:** `shadow-lg` on active/hover states
+- **Sidebar buttons:** `hover:shadow-lg` with scale animation
+- **Modal buttons:** `shadow-md` + `hover:shadow-lg` with scale
+- **Input fields:** `focus:shadow-md` for depth on focus
+- **Consistent hierarchy:** Shadow sizes indicate interaction importance
+
+#### Enhanced Interactions 🎭
+- **Hover scale effects:** Buttons scale to `scale-105` or `scale-110` on hover
+- **Smooth transitions:** `transition-all duration-200` for fluid animations
+- **Better visual hierarchy:** Active states use shadows + scale instead of just rings
+- **Consistent spacing:** Improved gap spacing throughout (gap-1, gap-2, gap-3)
+- **Professional polish:** Every interaction feels smooth and intentional
+
+#### Design System 🎨
+- **Rounded corners:** lg (8px), xl (12px), 2xl (16px)
+- **Shadow hierarchy:** md (subtle), lg (prominent)
+- **Transition timing:** 200ms duration (feels instant but not jarring)
+- **Hover effects:** Scale + shadow + color changes
+- **Color consistency:** Same palette, better application
+- **Typography:** Improved font sizes and weights for readability
+
+**Before vs After:**
+- **Before:** Square edges, flat appearance, horizontal top toolbar, cramped layout
+- **After:** Rounded edges, layered depth, vertical left sidebar, spacious modern layout
+
+**Files Modified in PR #48:**
+- `src/components/Dashboard.tsx` (281 lines changed) - Complete layout restructure with sidebar
+- `src/components/Gallery.tsx` (19 lines changed) - Rounded cards, enhanced hover effects
+- `src/components/ScreenshotModal.tsx` (26 lines changed) - Rounded modal, polished buttons
+
+**Visual Impact:**
+- App looks **significantly more modern and polished**
+- Matches design language of leading macOS apps
+- Better visual hierarchy makes features more discoverable
+- Improved usability with always-visible shortcuts
+
+### 2. Marketing Website Separation (PR #47)
 **Complete separation of marketing landing page from Electron app**
 
 #### Dedicated Website Directory 🌐
@@ -65,7 +135,7 @@
 - Updated `README.md` - Added website structure documentation
 - Created `website/README.md` - Deployment instructions for all platforms
 
-### 2. UI Fixes & Real-time Updates (PR #45) 🔥 NEW!
+### 3. UI Fixes & Real-time Updates (PR #45)
 **Real-time favorite counts, edited image refresh, and UI improvements**
 
 #### Real-time Favorite Count Updates ⭐
@@ -111,7 +181,7 @@
 - `index.html` - Simplified title tag
 - `SCREENVAULT_CONTEXT.md` - Updated documentation
 
-### 2. Performance Optimizations Phase 3 (PR #44) ⚡⚡⚡
+### 4. Performance Optimizations Phase 3 (PR #44) ⚡⚡⚡
 **LRU Cache + Smart OCR + Full-Resolution Viewing**
 
 #### LRU File Cache (Optimization #11)
@@ -192,7 +262,7 @@
 - OCR tags: **6-8 relevant tags** (vs 1-2 generic)
 - Memory: **Controlled at 50MB** (cache limit)
 
-### 2. Performance Optimizations Phase 2 (PR #42, #43) ⚡⚡
+### 5. Performance Optimizations Phase 2 (PR #42, #43) ⚡⚡
 **MASSIVE performance boost - Gallery now 10-20x faster with 100x less memory**
 
 #### Debounce & State Updates (PR #42)
@@ -249,7 +319,7 @@
 - Database queries **40% fewer** through smart debouncing
 - **Ready for production** - handles power users with massive libraries!
 
-### 3. Performance Optimizations Phase 1 (PR #40, #41) ⚡
+### 6. Performance Optimizations Phase 1 (PR #40, #41) ⚡
 **Foundational performance improvements - 5-10x faster overall**
 
 #### Database Indexes (PR #40)
@@ -274,7 +344,7 @@
 - Faster folder switching and view changes
 - 50-70% fewer unnecessary operations
 
-### 4. UI Enhancements & Bug Fixes (PR #38)
+### 7. UI Enhancements & Bug Fixes (PR #38)
 - **Screenshot Tile Display:** Changed from object-cover to object-contain so users can see entire screenshot without cropping
 - **Folder Section Redesign:**
   - Single-row horizontal scroll layout (was 2-row grid)
@@ -292,7 +362,7 @@
   - Press Escape key to close modal
 - **Real-time Favorites Count:** Fixed bug where favorites count wasn't updating in real-time
 
-### 5. Drag-and-Drop to External Apps (PR #39)
+### 8. Drag-and-Drop to External Apps (PR #39)
 - **External App Support:** Drag screenshots from ScreenVault directly to external applications
   - Works with WhatsApp, VS Code, Slack, and any app that accepts image files
   - Uses Electron's File API to create actual file objects during drag operations
@@ -300,12 +370,12 @@
 - **Native File Drag:** Implemented proper file:// protocol support with IPC handlers
 - **Drag Preview:** Blue box with camera emoji shown during drag operations
 
-### 6. Quick Folder Access (PR #39)
+### 9. Quick Folder Access (PR #39)
 - **Toolbar Button:** Added folder icon button in toolbar (between keyboard shortcuts and CAPTURE)
 - **One-Click Access:** Opens ~/Pictures/ScreenVault folder in Finder instantly
 - **IPC Handler:** Added file:open-screenshots-folder handler in main process
 
-### 7. Fixed Duplicate Screenshots & Editor Save (PR #32)
+### 10. Fixed Duplicate Screenshots & Editor Save (PR #32)
 - **No More Duplicates:** Added duplicate check in saveScreenshotToDatabase() to prevent double-saving
 - **Editor Save Fixed:** When saving from editor, updates existing screenshot instead of creating duplicate
 - **Handles OCR Renames:** Editor properly finds and updates screenshots even after OCR renames them
@@ -803,6 +873,12 @@ I'm continuing work on ScreenVault, an Electron-based macOS screenshot managemen
   - Edited images refresh immediately in gallery
   - Search bar moved to screenshots section
   - Simplified window title
+- ✅ **UI Design Improvements (PR #48):** 🔥 NEWEST!
+  - Left sidebar layout (220px, organized sections)
+  - Rounded corners throughout entire app
+  - Subtle shadows and elevation effects
+  - Enhanced hover animations and transitions
+  - Always-visible keyboard shortcuts
 
 **Latest PRs:**
 - PR #32: Duplicates Fix (merged)
@@ -814,10 +890,11 @@ I'm continuing work on ScreenVault, an Electron-based macOS screenshot managemen
 - PR #43: Image Thumbnails (merged)
 - PR #44: LRU Cache + Smart OCR + Full-Res Viewing (merged)
 - PR #45: Real-time Favorites + Edited Image Refresh + UI Fixes (merged)
-- PR #47: Marketing Website Separation (open) ← **CURRENT PR**
+- PR #47: Marketing Website Separation (merged)
+- PR #48: UI Design Improvements (open) ← **CURRENT PR**
 
-**Current Branch:** `feature/separate-landing-page`
-**Status:** Website separated into `/website` directory, Vercel configured, PR #47 ready for review
+**Current Branch:** `feature/ui-design-improvements`
+**Status:** Left sidebar implemented, rounded corners applied throughout, enhanced visual hierarchy, PR #48 ready for review
 
 **Quick Build & Launch:**
 ```bash
@@ -864,13 +941,14 @@ gh pr create --title "PR Title" --body "Description
 **Important Files:**
 - `electron/main.js` - IPC handlers, LRU cache, OCR tag generation, thumbnail system, cache invalidation
 - `electron/preload.js` - API bridge (useThumbnail parameter added)
-- `src/components/Dashboard.tsx` - Main UI, toolbar, updateFavCount callback, search bar
-- `src/components/Gallery.tsx` - Screenshot grid, virtual scrolling, debounced search, onFavoriteToggle
-- `src/components/ScreenshotModal.tsx` - Screenshot viewer (full-res, 95vw width, favorite toggle)
+- `src/components/Dashboard.tsx` - Left sidebar layout, main actions, tools, shortcuts, folder cards
+- `src/components/Gallery.tsx` - Screenshot grid with rounded cards, virtual scrolling, hover effects
+- `src/components/ScreenshotModal.tsx` - Rounded modal, full-res images, polished button design
 - `src/components/Editor.tsx` - Annotation editor (full-res images)
 - `website/` - Marketing landing page (separate deployment)
 - `vercel.json` - Vercel deployment configuration
-- `OPTIMIZATION_*.md` - Performance documentation
+- `SCREENVAULT_CONTEXT.md` - Complete project documentation (THIS FILE)
+- `OPTIMIZATION_*.md` - Performance optimization documentation
 
 **Performance Notes:**
 - **LRU Cache:** 50MB limit, instant folder switching (<100ms vs 1-2s)
