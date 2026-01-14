@@ -196,7 +196,7 @@ export function ScreenshotModal({ screenshot, onClose, onUpdate, onFavoriteToggl
       onClick={onClose}
     >
       <div
-        className="bg-[#e9e6e4] rounded-none shadow-2xl max-w-[95vw] w-full max-h-[90vh] overflow-hidden flex flex-col border border-[#94918f]"
+        className="bg-[#e9e6e4] rounded-2xl shadow-2xl max-w-[95vw] w-full max-h-[90vh] overflow-hidden flex flex-col border border-[#94918f]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between p-6 border-b border-[#94918f]">
@@ -206,7 +206,7 @@ export function ScreenshotModal({ screenshot, onClose, onUpdate, onFavoriteToggl
           <div className="flex items-center gap-2">
             <button
               onClick={toggleFavorite}
-              className="p-2 hover:bg-[#161419] hover:text-[#e9e6e4] rounded-none transition-colors border border-transparent hover:border-[#161419]"
+              className="p-2 hover:bg-[#161419] hover:text-[#e9e6e4] rounded-lg transition-all hover:scale-110 border border-transparent hover:border-[#161419] hover:shadow-md"
             >
               <Star
                 className={`w-5 h-5 ${isFavorite ? 'fill-[#161419] text-[#161419]' : 'text-[#161419]'
@@ -215,27 +215,27 @@ export function ScreenshotModal({ screenshot, onClose, onUpdate, onFavoriteToggl
             </button>
             <button
               onClick={() => window.electronAPI?.file.reveal(screenshot.storage_path)}
-              className="p-2 hover:bg-[#161419] hover:text-[#e9e6e4] rounded-none transition-colors text-[#161419]"
+              className="p-2 hover:bg-[#161419] hover:text-[#e9e6e4] rounded-lg transition-all hover:scale-110 text-[#161419] hover:shadow-md"
               title="Show in Finder"
             >
               <FolderOpen className="w-5 h-5" />
             </button>
             <button
               onClick={() => window.electronAPI?.file.share(screenshot.storage_path)}
-              className="p-2 hover:bg-[#161419] hover:text-[#e9e6e4] rounded-none transition-colors text-[#161419]"
+              className="p-2 hover:bg-[#161419] hover:text-[#e9e6e4] rounded-lg transition-all hover:scale-110 text-[#161419] hover:shadow-md"
               title="Share"
             >
               <Share2 className="w-5 h-5" />
             </button>
             <button
               onClick={deleteScreenshot}
-              className="p-2 hover:bg-red-600 hover:text-white rounded-none transition-colors text-red-600"
+              className="p-2 hover:bg-red-600 hover:text-white rounded-lg transition-all hover:scale-110 text-red-600 hover:shadow-md"
             >
               <Trash2 className="w-5 h-5" />
             </button>
             <button
               onClick={onClose}
-              className="p-2 hover:bg-[#161419] hover:text-[#e9e6e4] rounded-none transition-colors ml-2 text-[#161419]"
+              className="p-2 hover:bg-[#161419] hover:text-[#e9e6e4] rounded-lg transition-all hover:scale-110 ml-2 text-[#161419] hover:shadow-md"
             >
               <X className="w-5 h-5" />
             </button>
@@ -314,12 +314,12 @@ export function ScreenshotModal({ screenshot, onClose, onUpdate, onFavoriteToggl
                 {screenshot.custom_tags.map((tag) => (
                   <span
                     key={tag}
-                    className="inline-flex items-center gap-1 px-2 py-1 border border-[#161419] text-[#161419] rounded-none text-xs uppercase tracking-wider subtitle-font"
+                    className="inline-flex items-center gap-1 px-2 py-1 border border-[#161419] text-[#161419] rounded-md text-xs uppercase tracking-wider subtitle-font"
                   >
                     {tag}
                     <button
                       onClick={() => removeTag(tag)}
-                      className="hover:text-red-600"
+                      className="hover:text-red-600 transition-colors"
                     >
                       ×
                     </button>
@@ -333,11 +333,11 @@ export function ScreenshotModal({ screenshot, onClose, onUpdate, onFavoriteToggl
                   onChange={(e) => setNewTag(e.target.value)}
                   onKeyDown={(e) => handleKeyDown(e, addTag)}
                   placeholder="Add tag..."
-                  className="flex-1 px-0 py-1.5 text-sm bg-transparent border-b border-[#161419] rounded-none focus:border-[#161419] outline-none placeholder-[#161419]/40 subtitle-font"
+                  className="flex-1 px-3 py-1.5 text-sm bg-transparent border border-[#94918f] rounded-lg focus:border-[#161419] focus:shadow-md outline-none placeholder-[#161419]/40 subtitle-font transition-all"
                 />
                 <button
                   onClick={addTag}
-                  className="px-3 py-1.5 bg-[#161419] text-[#e9e6e4] rounded-none text-sm font-medium hover:opacity-90 transition-opacity subtitle-font"
+                  className="px-3 py-1.5 bg-[#161419] text-[#e9e6e4] rounded-lg text-sm font-medium hover:bg-[#2a2730] hover:shadow-lg transition-all hover:scale-105 subtitle-font"
                 >
                   Add
                 </button>
@@ -358,11 +358,11 @@ export function ScreenshotModal({ screenshot, onClose, onUpdate, onFavoriteToggl
                   onChange={(e) => setNewNote(e.target.value)}
                   onKeyDown={(e) => handleKeyDown(e, addNote)}
                   placeholder="Add a note..."
-                  className="flex-1 px-0 py-2 text-sm bg-transparent border-b border-[#161419] rounded-none focus:border-[#161419] outline-none placeholder-[#161419]/40 subtitle-font"
+                  className="flex-1 px-3 py-2 text-sm bg-transparent border border-[#94918f] rounded-lg focus:border-[#161419] focus:shadow-md outline-none placeholder-[#161419]/40 subtitle-font transition-all"
                 />
                 <button
                   onClick={addNote}
-                  className="px-3 py-2 bg-[#161419] text-[#e9e6e4] rounded-none text-sm font-medium hover:opacity-90 transition-opacity flex items-center gap-1 subtitle-font"
+                  className="px-3 py-2 bg-[#161419] text-[#e9e6e4] rounded-lg text-sm font-medium hover:bg-[#2a2730] hover:shadow-lg transition-all hover:scale-105 flex items-center gap-1 subtitle-font"
                 >
                   <Plus className="w-4 h-4" />
                   Add
@@ -377,7 +377,7 @@ export function ScreenshotModal({ screenshot, onClose, onUpdate, onFavoriteToggl
                 {noteHistory.map((note, index) => (
                   <div
                     key={index}
-                    className="p-3 bg-transparent border border-[#94918f] rounded-none"
+                    className="p-3 bg-transparent border border-[#94918f] rounded-lg"
                   >
                     <p className="text-sm text-[#161419] mb-1 subtitle-font">{note.text}</p>
                     <p className="text-xs text-[#161419] opacity-50 subtitle-font">{formatNoteDate(note.timestamp)}</p>
