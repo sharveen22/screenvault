@@ -23,9 +23,49 @@
 
 ---
 
-## 🎯 LATEST FEATURES (January 13, 2026)
+## 🎯 LATEST FEATURES (January 14, 2026)
 
-### 1. UI Fixes & Real-time Updates (PR #45) 🔥 NEW!
+### 1. Marketing Website Separation (PR #47) 🔥 NEWEST!
+**Complete separation of marketing landing page from Electron app**
+
+#### Dedicated Website Directory 🌐
+- **New Structure:** Created `/website` directory with all marketing pages
+- **Files Organized:**
+  - `website/index.html` - Landing page (previously `landing.html`)
+  - `website/download.html` - Download confirmation page
+  - `website/assets/` - All images and assets (camera.png, screenshots)
+  - `website/README.md` - Comprehensive deployment guide
+- **Clean Separation:** Marketing website completely independent from Electron app
+
+#### Vercel Configuration ⚙️
+- **Updated `vercel.json`:**
+  - Output directory: `website/`
+  - Clean URLs enabled (no `.html` extensions needed)
+  - Security headers: X-Content-Type-Options, X-Frame-Options, X-XSS-Protection
+  - URL rewrite: `/download` → `/download.html`
+- **Auto-Detection:** Vercel automatically reads configuration from `vercel.json`
+- **Production Ready:** Website deploys from `website/` folder automatically
+
+#### Deployment Options 🚀
+- **Vercel:** Automatic deployment via GitHub integration
+- **Netlify:** Drag-and-drop or CLI deployment
+- **GitHub Pages:** Via Actions workflow
+- **Cloudflare Pages:** Direct repository connection
+
+#### Benefits ✨
+- Clear separation between app code and website
+- Independent deployment pipelines
+- Easy to maintain and update website separately
+- No confusion between Electron app and marketing site
+- Multiple hosting options available
+
+**Files Modified in PR #47:**
+- Created `website/` directory with index.html, download.html, assets/
+- Updated `vercel.json` - Changed output directory to `website/`
+- Updated `README.md` - Added website structure documentation
+- Created `website/README.md` - Deployment instructions for all platforms
+
+### 2. UI Fixes & Real-time Updates (PR #45) 🔥 NEW!
 **Real-time favorite counts, edited image refresh, and UI improvements**
 
 #### Real-time Favorite Count Updates ⭐
@@ -466,8 +506,14 @@ screenvault/
 │   │   └── useElectronScreenshots.ts # Screenshot capture logic
 │   └── lib/
 │       └── database.ts        # Database queries
+├── website/              # Marketing landing page (Vercel/Netlify) 🆕
+│   ├── index.html        # Landing page
+│   ├── download.html     # Download confirmation page
+│   ├── assets/           # Website images (camera.png, screenshots)
+│   └── README.md         # Deployment instructions
 ├── release/              # Build output directory
 ├── db/                   # SQLite database files
+├── vercel.json           # Vercel deployment config (serves from website/)
 ├── package.json          # Dependencies and build config
 └── OPTIMIZATION_*.md     # Performance optimization documentation
 ```
@@ -747,7 +793,12 @@ I'm continuing work on ScreenVault, an Electron-based macOS screenshot managemen
   - LRU file cache (instant folder switching, <100ms)
   - Smart OCR tags (3-phase algorithm, 8 relevant tags)
   - Full-resolution viewing (modal + editor, crystal clear images)
-- ✅ **UI Fixes & Real-time Updates (PR #45):** 🔥 NEW!
+- ✅ **Marketing Website Separation (PR #47):** 🔥 NEWEST!
+  - Dedicated `/website` directory for landing page
+  - Vercel configuration for automatic deployment
+  - Complete separation from Electron app
+  - Independent deployment pipeline
+- ✅ **UI Fixes & Real-time Updates (PR #45):**
   - Real-time favorite count updates (instant, no delay)
   - Edited images refresh immediately in gallery
   - Search bar moved to screenshots section
@@ -762,10 +813,11 @@ I'm continuing work on ScreenVault, an Electron-based macOS screenshot managemen
 - PR #42: Debouncing + Virtual Scrolling (merged)
 - PR #43: Image Thumbnails (merged)
 - PR #44: LRU Cache + Smart OCR + Full-Res Viewing (merged)
-- PR #45: Real-time Favorites + Edited Image Refresh + UI Fixes (open) ← **CURRENT PR**
+- PR #45: Real-time Favorites + Edited Image Refresh + UI Fixes (merged)
+- PR #47: Marketing Website Separation (open) ← **CURRENT PR**
 
-**Current Branch:** `feature/ui-fixes-and-improvements`
-**Status:** All UI fixes complete, PR #45 ready for review
+**Current Branch:** `feature/separate-landing-page`
+**Status:** Website separated into `/website` directory, Vercel configured, PR #47 ready for review
 
 **Quick Build & Launch:**
 ```bash
@@ -810,12 +862,14 @@ gh pr create --title "PR Title" --body "Description
 ```
 
 **Important Files:**
-- `electron/main.js` - IPC handlers, LRU cache, OCR tag generation, thumbnail system
+- `electron/main.js` - IPC handlers, LRU cache, OCR tag generation, thumbnail system, cache invalidation
 - `electron/preload.js` - API bridge (useThumbnail parameter added)
-- `src/components/Dashboard.tsx` - Main UI, toolbar, debounced loading
-- `src/components/Gallery.tsx` - Screenshot grid, virtual scrolling, debounced search
-- `src/components/ScreenshotModal.tsx` - Screenshot viewer (full-res, 95vw width)
+- `src/components/Dashboard.tsx` - Main UI, toolbar, updateFavCount callback, search bar
+- `src/components/Gallery.tsx` - Screenshot grid, virtual scrolling, debounced search, onFavoriteToggle
+- `src/components/ScreenshotModal.tsx` - Screenshot viewer (full-res, 95vw width, favorite toggle)
 - `src/components/Editor.tsx` - Annotation editor (full-res images)
+- `website/` - Marketing landing page (separate deployment)
+- `vercel.json` - Vercel deployment configuration
 - `OPTIMIZATION_*.md` - Performance documentation
 
 **Performance Notes:**
