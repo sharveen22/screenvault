@@ -25,7 +25,67 @@
 
 ## 🎯 LATEST FEATURES (January 14, 2026)
 
-### 1. Folder UI Refinements (PR #50) 🔥 NEWEST!
+### 1. UI Improvements: Gallery Layout, Branding, and Styling (PR #52) 🔥 NEWEST!
+**Major UI/UX polish focusing on better space utilization, visual consistency, and professional appearance**
+
+#### Full-Height Gallery Layout 📏
+- **Fixed vertical layout:** Gallery now extends to full window height (removed blank space at bottom)
+- **Proper flex hierarchy:** Updated Gallery component with `flex: 1` and `min-h-0` throughout the chain
+- **Seamless scrolling:** Screenshots now use entire available vertical space without wasted areas
+- **Technical fix:** Added `min-h-0` to flex containers to allow proper height calculation
+
+#### Larger, Less Cluttered Tiles 🖼️
+- **Reduced columns:** Changed from 5-6 columns to max 4 columns across all screen sizes
+- **Increased spacing:** Tile gap increased from 12px to 16px (gap-3 → gap-4)
+- **Better visual breathing room:** Screenshots have more space, reducing cluttered appearance
+- **Responsive grid:** Maintains 2-3-4 column progression based on screen width
+
+#### Keyboard Shortcuts Enhancement ⌨️
+- **Clearer format:** Changed from symbol-based (⌘ ⇧ S) to text-based (Cmd+Shift+S)
+- **Better readability:** Single kbd element per shortcut instead of three separate symbols
+- **Even distribution:** Shortcuts spread across toolbar with `justify-between`
+- **Professional appearance:** More intuitive for users to quickly scan and understand
+
+#### Sidebar Branding 🏷️
+- **App branding:** Replaced Capture button with ScreenVault logo + name at top of sidebar
+- **Prominent identity:** Logo and app name immediately visible when app opens
+- **Cleaner code:** Removed unused `useElectronScreenshots` hook and `handleCapture` function
+- **Icon consistency:** Changed "All Screenshots" from Camera to Image icon for better semantics
+
+#### Folder Styling Consistency 📁
+- **Unified colors:** Removed jarring blue color (#3b82f6) from subfolders
+- **Same font styling:** All folders now use consistent `text-sm text-[#161419]`
+- **Subtle hierarchy:** Kept arrow indicator (↳) with `opacity-50` for subfolder indication
+- **Simplified display:** Removed redundant parent folder name display above subfolders
+- **Visual harmony:** All folder items look cohesive and professional
+
+#### Custom Scrollbar Styling 📜
+- **Seamless integration:** Transparent track inherits parent background colors automatically
+- **Professional appearance:** Styled thumb with app border color (#94918f)
+- **Interactive feedback:** Darker color (#161419) on hover for better UX
+- **Subtle design:** Reduced width from 12px to 10px for less visual weight
+- **Cross-browser support:** Includes Firefox support with `scrollbar-width` and `scrollbar-color`
+- **Consistent theming:** Scrollbars blend perfectly with app's beige color scheme
+
+**Files Modified in PR #52:**
+- `src/components/Dashboard.tsx` - Added branding, updated shortcuts, consistent folder styling, removed Capture button
+- `src/components/Gallery.tsx` - Fixed flex layout for full height, updated grid from 5-6 to 4 columns, increased spacing
+- `src/index.css` - Added custom scrollbar styling for webkit and Firefox browsers
+- `SCREENVAULT_CONTEXT.md` - Updated documentation
+
+**Visual Impact:**
+- ✨ Gallery uses full vertical space without wasted blank areas
+- ✨ Larger, more spacious screenshot tiles (4 across vs 5-6)
+- ✨ Consistent, professional folder styling throughout sidebar
+- ✨ Custom scrollbars that blend seamlessly with app design
+- ✨ Prominent branding in sidebar with app logo and name
+- ✨ Clear, readable keyboard shortcuts in plain text format
+
+**Before vs After:**
+- **Before:** 5-6 column grid, gap-3 spacing, blue subfolder colors, generic scrollbars, Capture button
+- **After:** 4 column grid, gap-4 spacing, consistent folder colors, custom scrollbars, ScreenVault branding
+
+### 2. Folder UI Refinements (PR #50)
 **Compact, clean folder cards with consistent branding and optimized performance**
 
 #### Compact Folder Cards 📦
@@ -948,10 +1008,11 @@ I'm continuing work on ScreenVault, an Electron-based macOS screenshot managemen
 - PR #45: Real-time Favorites + Edited Image Refresh + UI Fixes (merged)
 - PR #47: Marketing Website Separation (merged)
 - PR #48: UI Design Improvements (merged)
-- PR #50: Folder UI Refinements (merged) ← **LATEST**
+- PR #50: Folder UI Refinements (merged)
+- PR #52: UI Improvements - Gallery Layout, Branding, and Styling (merged) ← **LATEST**
 
 **Current Branch:** `main` (all changes merged)
-**Status:** Production-ready with optimized UI, performance, and clean folder design
+**Status:** Production-ready with polished UI, full-height gallery, custom scrollbars, and consistent branding
 
 **Quick Build & Launch:**
 ```bash
