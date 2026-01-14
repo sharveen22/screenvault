@@ -25,7 +25,58 @@
 
 ## 🎯 LATEST FEATURES (January 14, 2026)
 
-### 1. UI Design Improvements (PR #48) 🔥 NEWEST!
+### 1. Folder UI Refinements (PR #50) 🔥 NEWEST!
+**Compact, clean folder cards with consistent branding and optimized performance**
+
+#### Compact Folder Cards 📦
+- **Reduced size:** 160px → 120px (25% smaller, less cluttered)
+- **Tighter spacing:** Gap reduced from 3 to 2.5 for cleaner appearance
+- **Better proportions:** More folders visible in viewport
+- **Consistent styling:** All folders use same dark gradient (`#2a2730` → `#161419`)
+- **Brand-aligned colors:** Removed bright pastels in favor of muted tones
+
+#### Performance Improvements ⚡
+- **Removed image loading:** Eliminated ~150 lines of mosaic preview code
+- **Instant rendering:** No more waiting for folder preview images to load
+- **Lightweight function:** Replaced `loadScreenshotsAndImages()` with simple `loadCounts()`
+- **Reduced memory:** No image data stored for folder previews
+- **Faster initial load:** Folders appear immediately on app start
+
+#### Clean Scrollbar UX 🎨
+- **Fixed double scrollbar:** Removed outer scrollbar from gallery section
+- **Single scrollbar:** Only inner Virtuoso scrollbar visible for screenshot tiles
+- **Better hierarchy:** Clear separation between folders (horizontal scroll) and gallery (vertical scroll)
+- **Horizontal scrollbar:** Maintained for folders section with Tailwind styling
+
+#### What Was Removed
+- Mosaic image previews (4 images per folder card)
+- Different colored gradients per folder (was using 6 pastel variations)
+- Image loading logic and state management
+- `folderImages` state and related loading functions
+- Outer gallery container scrollbar (`overflow-y-auto` → `overflow-hidden`)
+
+#### What Was Kept
+- All drag-and-drop functionality (screenshots to folders, folder reorganization)
+- Create/rename/delete folder operations
+- Subfolder indicators and parent folder names
+- Folder navigation and active states
+- Real-time folder count updates
+
+**Before vs After:**
+- **Before:** 160px tiles with mosaic previews, varied colors, image loading delays, double scrollbars
+- **After:** 120px compact tiles, consistent dark gradient, instant rendering, single scrollbar
+
+**Files Modified in PR #50:**
+- `src/components/Dashboard.tsx` - Removed mosaic renderer, simplified folder cards, optimized scrolling
+- `SCREENVAULT_CONTEXT.md` - Updated documentation
+
+**Visual & Performance Impact:**
+- **25% smaller footprint** for each folder card
+- **Instant folder rendering** (no image loading wait)
+- **Cleaner, more minimalist** appearance aligned with brand
+- **Better UX** with single scrollbar in gallery
+
+### 2. UI Design Improvements (PR #48)
 **Major UI/UX redesign with rounded corners, left sidebar, and enhanced visual hierarchy**
 
 #### Left Sidebar Layout (220px) 🎨
@@ -847,7 +898,7 @@ I'm continuing work on ScreenVault, an Electron-based macOS screenshot managemen
 - ✅ File watcher (auto-import from ~/Pictures/ScreenVault)
 - ✅ Fixed duplicate screenshots & editor save issues
 - ✅ Gallery shows only files that exist on disk
-- ✅ UI enhancements: object-contain tiles, horizontal folder scroll, keyboard shortcuts
+- ✅ UI enhancements: object-contain tiles, compact folder cards, keyboard shortcuts
 - ✅ Modal improvements: click outside to close, Escape key support
 - ✅ Drag-and-drop to external apps (WhatsApp, VS Code, etc.)
 - ✅ Quick folder access button in toolbar
@@ -863,7 +914,7 @@ I'm continuing work on ScreenVault, an Electron-based macOS screenshot managemen
   - LRU file cache (instant folder switching, <100ms)
   - Smart OCR tags (3-phase algorithm, 8 relevant tags)
   - Full-resolution viewing (modal + editor, crystal clear images)
-- ✅ **Marketing Website Separation (PR #47):** 🔥 NEWEST!
+- ✅ **Marketing Website Separation (PR #47):**
   - Dedicated `/website` directory for landing page
   - Vercel configuration for automatic deployment
   - Complete separation from Electron app
@@ -873,12 +924,19 @@ I'm continuing work on ScreenVault, an Electron-based macOS screenshot managemen
   - Edited images refresh immediately in gallery
   - Search bar moved to screenshots section
   - Simplified window title
-- ✅ **UI Design Improvements (PR #48):** 🔥 NEWEST!
+- ✅ **UI Design Improvements (PR #48):**
   - Left sidebar layout (220px, organized sections)
   - Rounded corners throughout entire app
   - Subtle shadows and elevation effects
   - Enhanced hover animations and transitions
   - Always-visible keyboard shortcuts
+- ✅ **Folder UI Refinements (PR #50):** 🔥 LATEST!
+  - Compact folder cards (120px, 25% smaller)
+  - Consistent dark gradient for all folders
+  - Removed mosaic image previews (~150 lines of code)
+  - Instant folder rendering (no image loading)
+  - Fixed double scrollbar issue in gallery
+  - Single clean scrollbar for better UX
 
 **Latest PRs:**
 - PR #32: Duplicates Fix (merged)
@@ -891,10 +949,11 @@ I'm continuing work on ScreenVault, an Electron-based macOS screenshot managemen
 - PR #44: LRU Cache + Smart OCR + Full-Res Viewing (merged)
 - PR #45: Real-time Favorites + Edited Image Refresh + UI Fixes (merged)
 - PR #47: Marketing Website Separation (merged)
-- PR #48: UI Design Improvements (open) ← **CURRENT PR**
+- PR #48: UI Design Improvements (merged)
+- PR #50: Folder UI Refinements (merged) ← **LATEST PR**
 
-**Current Branch:** `feature/ui-design-improvements`
-**Status:** Left sidebar implemented, rounded corners applied throughout, enhanced visual hierarchy, PR #48 ready for review
+**Current Branch:** `main` (all PRs merged)
+**Status:** All features complete, production-ready with optimized folder UI
 
 **Quick Build & Launch:**
 ```bash
@@ -941,8 +1000,8 @@ gh pr create --title "PR Title" --body "Description
 **Important Files:**
 - `electron/main.js` - IPC handlers, LRU cache, OCR tag generation, thumbnail system, cache invalidation
 - `electron/preload.js` - API bridge (useThumbnail parameter added)
-- `src/components/Dashboard.tsx` - Left sidebar layout, main actions, tools, shortcuts, folder cards
-- `src/components/Gallery.tsx` - Screenshot grid with rounded cards, virtual scrolling, hover effects
+- `src/components/Dashboard.tsx` - Left sidebar, compact folder cards (120px), loadCounts function, scrollbar fixes
+- `src/components/Gallery.tsx` - Screenshot grid with rounded cards, virtual scrolling, single scrollbar
 - `src/components/ScreenshotModal.tsx` - Rounded modal, full-res images, polished button design
 - `src/components/Editor.tsx` - Annotation editor (full-res images)
 - `website/` - Marketing landing page (separate deployment)
