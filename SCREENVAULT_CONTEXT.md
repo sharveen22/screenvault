@@ -929,17 +929,20 @@ I'm continuing work on ScreenVault, an Electron-based macOS screenshot managemen
   - Subtle shadows and elevation effects
   - Enhanced hover animations and transitions
   - Always-visible keyboard shortcuts
-- ✅ **Folder UI Refinements (PR #50):** 🔥 LATEST!
+- ✅ **Folder UI Refinements (PR #50):**
   - Compact folder cards (120px, 25% smaller)
   - Consistent dark gradient (#2a2730 → #161419) for all folders
   - Removed mosaic image previews (~150 lines of code)
   - Instant folder rendering (no image loading delays)
   - Fixed double scrollbar issue in gallery section
-  - Consistent dark gradient for all folders
-  - Removed mosaic image previews (~150 lines of code)
-  - Instant folder rendering (no image loading)
-  - Fixed double scrollbar issue in gallery
   - Single clean scrollbar for better UX
+- ✅ **UI Improvements (PR #52):** 🔥 LATEST!
+  - Full-height gallery layout (removed bottom blank space)
+  - 4-column grid with increased spacing (less cluttered tiles)
+  - Keyboard shortcuts in clear text format (Cmd+Shift+S)
+  - ScreenVault branding in sidebar (replaced Capture button)
+  - Consistent folder styling (removed jarring blue colors)
+  - Custom scrollbar styling (seamless with app theme)
 
 **Latest PRs:**
 - PR #32: Duplicates Fix (merged)
@@ -953,76 +956,123 @@ I'm continuing work on ScreenVault, an Electron-based macOS screenshot managemen
 - PR #45: Real-time Favorites + Edited Image Refresh + UI Fixes (merged)
 - PR #47: Marketing Website Separation (merged)
 - PR #48: UI Design Improvements (merged)
-- PR #50: Folder UI Refinements (merged) ← **LATEST PR**
+- PR #50: Folder UI Refinements (merged)
+- PR #52: UI Improvements - Gallery Layout, Branding, and Styling (merged) ← **LATEST PR**
 
 **Current Branch:** `main` (all PRs merged)
-**Status:** All features complete, production-ready with optimized folder UI
+**Status:** Production-ready with polished UI, full-height gallery, custom scrollbars, and consistent branding
 
-**Quick Build & Launch:**
+**🚀 Quick Build & Launch:**
 ```bash
+# IMPORTANT: Always use this command to test your changes in the built Electron app
 pkill -f "ScreenVault" 2>/dev/null; sleep 1; npm run build && npx electron-builder --mac --dir -c.mac.identity=null && open release/mac-arm64/ScreenVault.app
 ```
 
-**Check Git Status:**
+**📊 Check Git Status:**
 ```bash
-git status
-git log --oneline -10
-git log origin/main..HEAD --oneline
-gh pr list
+git status                           # See modified files
+git log --oneline -10               # Recent commits
+git log origin/main..HEAD --oneline # Commits ahead of main
+gh pr list                          # List open PRs
 ```
 
-**Create New Branch & PR (from current branch):**
+**🔀 Create New Branch & PR Workflow:**
 ```bash
-# 1. Create new branch from current branch
+# Step 1: Create new feature branch
 git checkout -b feature/your-feature-name
 
-# 2. Stage and commit changes
+# Step 2: Stage and commit your changes
+git add src/components/Dashboard.tsx src/components/Gallery.tsx src/index.css
+# Or add all changes:
 git add -A
+
+# Step 3: Commit with detailed message
 git commit -m "$(cat <<'EOF'
-feat: Your feature title
+feat: Your feature title here
 
 ## Changes
-- Change 1
-- Change 2
+- Specific change 1 with details
+- Specific change 2 with details
+- Specific change 3 with details
 
 ## Technical Details
-- file1.js: Description
-- file2.tsx: Description
+- src/components/Dashboard.tsx: What changed and why
+- src/components/Gallery.tsx: What changed and why
+- src/index.css: What changed and why
+
+## Visual Impact
+- Impact on UI/UX
+- Performance improvements (if any)
 
 Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>
 EOF
 )"
 
-# 3. Push and create PR
+# Step 4: Push branch to GitHub
 git push -u origin feature/your-feature-name
-gh pr create --title "PR Title" --body "Description
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code)" --base main
+# Step 5: Create Pull Request
+gh pr create --title "Your PR Title" --body "$(cat <<'EOF'
+## Summary
+Brief description of what this PR accomplishes.
+
+## Changes
+- Change 1
+- Change 2
+- Change 3
+
+## Files Modified
+- `file1.tsx` - Description
+- `file2.tsx` - Description
+
+## Testing
+- [x] Tested scenario 1
+- [x] Tested scenario 2
+- [x] Tested scenario 3
+
+## Visual Impact (if applicable)
+✨ Describe UI/UX improvements
+
+---
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+EOF
+)" --base main
 ```
 
-**Important Files:**
-- `electron/main.js` - IPC handlers, LRU cache, OCR tag generation, thumbnail system, cache invalidation
-- `electron/preload.js` - API bridge (useThumbnail parameter added)
-- `src/components/Dashboard.tsx` - Left sidebar, compact folder cards (120px), loadCounts function, scrollbar fixes
-- `src/components/Gallery.tsx` - Screenshot grid with rounded cards, virtual scrolling, single scrollbar
-- `src/components/ScreenshotModal.tsx` - Rounded modal, full-res images, polished button design
-- `src/components/Editor.tsx` - Annotation editor (full-res images)
-- `website/` - Marketing landing page (separate deployment)
-- `vercel.json` - Vercel deployment configuration
-- `src/lib/ocr.ts` - OCR text extraction (renderer-side)
-- `SCREENVAULT_CONTEXT.md` - Complete project documentation (THIS FILE)
-- `OPTIMIZATION_*.md` - Performance optimization documentation
+**⚠️ Important Notes for Creating PRs:**
+- **Always build and test** using the Electron app build command BEFORE creating PR
+- **Never use `npm run dev`** for testing - it doesn't reflect the actual built app behavior
+- **Test thoroughly** with real data (screenshots, folders, etc.)
+- **Include detailed commit messages** with ## Changes and ## Technical Details sections
+- **Add Co-Authored-By: Claude Sonnet 4.5** to all commits
+- **Include 🤖 Generated with Claude Code** in PR descriptions
 
-**Performance Notes:**
+**📁 Important Files:**
+- `electron/main.js` - IPC handlers, LRU cache, OCR, thumbnails, cache invalidation
+- `electron/preload.js` - API bridge (includes useThumbnail parameter)
+- `src/components/Dashboard.tsx` - Sidebar, branding, folder UI, shortcuts toolbar
+- `src/components/Gallery.tsx` - 4-column grid, virtual scrolling, full-height layout
+- `src/components/ScreenshotModal.tsx` - Full-res images, modal UI
+- `src/components/Editor.tsx` - Annotation editor with full-res images
+- `src/index.css` - Global styles, custom scrollbar styling
+- `website/` - Marketing landing page (separate deployment)
+- `SCREENVAULT_CONTEXT.md` - **THIS FILE** - Complete documentation
+
+**⚡ Performance & UI Notes:**
 - **LRU Cache:** 50MB limit, instant folder switching (<100ms vs 1-2s)
 - **Thumbnails:** 300px JPEG at 80% quality in `.thumbnails/` folder
-- **Virtual scrolling:** react-virtuoso with overscan={2}
+- **Virtual scrolling:** react-virtuoso with overscan={2}, 4-column grid (max)
 - **Debounce timings:** 100ms (Gallery search), 150ms (Dashboard load), 300ms (refresh)
 - **Database:** 5 strategic indexes for 10x faster queries
 - **OCR Tags:** 3-phase algorithm (categories → keywords → capitalized), 8 tags max
 - **Full-res viewing:** Modal and editor use `useThumbnail: false` for crystal clear images
 - **Memory:** 15MB gallery + 50MB cache = 65MB total (vs 300MB before optimizations)
-- **Folder cards:** No image loading, instant rendering with dark gradients
+- **Folder cards:** No image loading, instant rendering with dark gradients (120px tiles)
+- **Gallery layout:** Full-height with proper flex chain, 4 columns with gap-4 spacing
+- **Custom scrollbars:** 10px width, transparent track, #94918f thumb color
+- **Branding:** ScreenVault logo + name in sidebar (replaced Capture button)
+- **Shortcuts:** Clear text format (Cmd+Shift+S) spread evenly across toolbar
 
 Please read full context from SCREENVAULT_CONTEXT.md in the workspace.
 
