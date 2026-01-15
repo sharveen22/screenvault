@@ -154,7 +154,7 @@
             <p id="status">Preparing your download...</p>
         </div>
 
-        <a href="https://github.com/sharveen22/screenvault/releases/download/v1.0.2/ScreenVault-1.0.0-arm64.dmg" class="manual-download" download>Click here if download doesn't start</a>
+        <a href="https://github.com/sharveen22/screenvault/releases/download/v1.0.2/ScreenVault-1.0.2-arm64.dmg" class="manual-download" download>Click here if download doesn't start</a>
         
         <br><br>
         
@@ -169,8 +169,8 @@
             // Detect user's architecture and download appropriate file
             const isAppleSilicon = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 0;
             const downloadUrl = isAppleSilicon
-                ? 'https://github.com/sharveen22/screenvault/releases/download/v1.0.2/ScreenVault-1.0.0-arm64.dmg'
-                : 'https://github.com/sharveen22/screenvault/releases/download/v1.0.2/ScreenVault-1.0.0-arm64.dmg'; // Default to ARM64 as it's universal
+                ? 'https://github.com/sharveen22/screenvault/releases/download/v1.0.2/ScreenVault-1.0.2-arm64.dmg'
+                : 'https://github.com/sharveen22/screenvault/releases/download/v1.0.2/ScreenVault-1.0.2-arm64.dmg'; // Default to ARM64 as it's universal
 
             const link = document.createElement('a');
             link.href = downloadUrl;
