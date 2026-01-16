@@ -23,9 +23,66 @@
 
 ---
 
-## 🎯 LATEST FEATURES (January 14, 2026)
+## 🎯 LATEST FEATURES (January 15, 2026)
 
-### 1. Folder UI Refinements (PR #50) 🔥 NEWEST!
+### 1. Code Signing & Notarization (v1.0.2) 🔥 PRODUCTION READY!
+**App is now fully signed and notarized by Apple for secure distribution**
+
+#### Apple Developer ID Signing ✅
+- **Certificate:** Developer ID Application: CATALYST GROWTH SG PTE. LTD. (YG5879BX5G)
+- **Hardened Runtime:** Enabled with performance-optimized entitlements
+- **Universal Binary:** Both Intel (x64) and Apple Silicon (arm64) builds
+- **No Warnings:** Users can install without "unidentified developer" alerts
+- **Verified:** Passes macOS Gatekeeper security checks
+
+#### Apple Notarization ✅
+- **Notarization Service:** Automated via `@electron/notarize`
+- **Apple ID Integration:** Credentials stored in `.env` file
+- **Build Time:** 5-15 minutes for full notarization
+- **Verification:** `spctl -a -vv` confirms "accepted, source=Notarized Developer ID"
+- **User Experience:** Seamless installation on macOS 11.0+
+
+#### Performance-Optimized Entitlements 🚀
+**Critical entitlements for maintaining performance with hardened runtime:**
+```xml
+<!-- JIT compilation for Tesseract.js WebAssembly -->
+<key>com.apple.security.cs.allow-jit</key><true/>
+
+<!-- WASM execution for OCR processing -->
+<key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/>
+
+<!-- Optimized native module loading (better-sqlite3) -->
+<key>com.apple.security.cs.allow-dyld-environment-variables</key><true/>
+
+<!-- Fast file I/O for screenshots -->
+<key>com.apple.security.files.user-selected.read-write</key><true/>
+<key>com.apple.security.files.downloads.read-write</key><true/>
+```
+
+**Why This Matters:**
+- v1.0.1 (first signed version) was **significantly slower** due to missing entitlements
+- v1.0.2 restored full performance with proper entitlements
+- OCR speed, app launch, and file operations all optimized
+
+#### Distribution Files
+- **GitHub Releases:** v1.0.2 with 4 files (DMG + ZIP for each architecture)
+- **Website Integration:** Auto-download from GitHub releases
+- **Automatic Updates:** Infrastructure ready for future auto-update system
+
+**Files Modified:**
+- `entitlements.mac.plist` - Added JIT, WASM, file access permissions
+- `scripts/notarize.js` - Notarization integration (already existed)
+- `package.json` - Version updated to 1.0.2
+- `website/download.html` - Updated download links to v1.0.2
+- `.env` (new) - Apple Developer credentials for notarization
+
+**Impact:**
+- ✅ Production-ready distribution
+- ✅ Professional, secure installation experience
+- ✅ No performance degradation from signing
+- ✅ Ready for Mac App Store submission (if desired)
+
+### 2. Folder UI Refinements (PR #50)
 **Compact, clean folder cards with consistent branding and optimized performance**
 
 #### Compact Folder Cards 📦
@@ -436,9 +493,9 @@
 
 ---
 
-## 🚀 BUILD & LAUNCH COMMANDS
+## 🚀 BUILD, SIGN & LAUNCH COMMANDS
 
-### Quick Build & Test (Recommended)
+### Quick Build & Test (Unsigned - For Development)
 **This is the fastest way to build and test your changes:**
 ```bash
 pkill -f "ScreenVault" 2>/dev/null; sleep 1; npm run build && npx electron-builder --mac --dir -c.mac.identity=null && open release/mac-arm64/ScreenVault.app
@@ -449,30 +506,108 @@ pkill -f "ScreenVault" 2>/dev/null; sleep 1; npm run build && npx electron-build
 npm run dev
 ```
 
-### Production Build
+### Production Build (Signed & Notarized - For Distribution)
+**CRITICAL: This requires Apple Developer credentials in `.env` file**
+
+#### Prerequisites
+1. **Create `.env` file** in project root:
 ```bash
-# Full build with DMG installer (signed)
-npm run electron:build
-
-# Quick unsigned build for testing
-npm run build && npx electron-builder --mac --dir -c.mac.identity=null
+# Apple Developer Credentials for Notarization
+APPLE_ID=sharveenkumar@gmail.com
+APPLE_APP_SPECIFIC_PASSWORD=your-app-specific-password
+APPLE_TEAM_ID=YG5879BX5G
 ```
 
-### App Locations After Build
-```
-release/mac-arm64/ScreenVault.app     # ARM64 build (default on Apple Silicon)
-release/mac/ScreenVault.app           # Universal build (if built)
-release/ScreenVault-1.0.0-arm64.dmg   # DMG installer (full build)
-```
+2. **Generate App-Specific Password:**
+   - Go to https://appleid.apple.com
+   - Sign in with your Apple ID
+   - Navigate to Security → App-Specific Passwords
+   - Click "Generate Password"
+   - Name it "ScreenVault Notarization"
+   - Copy the password and add to `.env`
 
-### Troubleshooting
+#### Build Commands
+
+**Build Signed & Notarized Universal Binary (Intel + Apple Silicon):**
 ```bash
-# Re-sign app if signature breaks
-codesign --force --deep --sign - release/mac-arm64/ScreenVault.app
+# Clean previous build
+rm -rf release/
 
-# Clean build (if issues occur)
-rm -rf release dist node_modules && npm install && npm run build
+# Build production app with signing and notarization
+npm run build && npx electron-builder --mac --x64 --arm64
 ```
+
+**What This Does:**
+1. Builds Vite frontend (React app)
+2. Compiles for both Intel (x64) and Apple Silicon (arm64)
+3. Signs with Developer ID certificate
+4. Notarizes with Apple (5-15 minutes)
+5. Creates DMG and ZIP files for both architectures
+
+#### Build Output
+```
+release/
+├── ScreenVault-1.0.2.dmg              # Intel DMG (131 MB)
+├── ScreenVault-1.0.2-arm64.dmg        # Apple Silicon DMG (125 MB)
+├── ScreenVault-1.0.2-mac.zip          # Intel ZIP (127 MB)
+├── ScreenVault-1.0.2-arm64-mac.zip    # Apple Silicon ZIP (120 MB)
+├── mac/ScreenVault.app                # Intel app bundle
+└── mac-arm64/ScreenVault.app          # Apple Silicon app bundle
+```
+
+#### Verify Signing & Notarization
+```bash
+# Check code signature
+codesign -dv --verbose=4 "release/mac-arm64/ScreenVault.app"
+# Should show: Authority=Developer ID Application: CATALYST GROWTH SG PTE. LTD.
+
+# Check entitlements
+codesign -d --entitlements :- "release/mac-arm64/ScreenVault.app"
+# Should show JIT, WASM, and file access entitlements
+
+# Verify notarization (Gatekeeper check)
+spctl -a -vv -t install "release/mac-arm64/ScreenVault.app"
+# Should show: accepted, source=Notarized Developer ID
+```
+
+### Troubleshooting Builds
+
+#### Issue: Notarization Failed
+```bash
+# Check notarization logs
+xcrun notarytool log <submission-id> --apple-id sharveenkumar@gmail.com --team-id YG5879BX5G
+
+# Common fixes:
+# 1. Verify credentials in .env are correct
+# 2. Check entitlements.mac.plist has required permissions
+# 3. Ensure Developer ID certificate is installed
+security find-identity -v -p codesigning
+```
+
+#### Issue: App is Slow After Signing
+**This means entitlements are missing!** Check [entitlements.mac.plist](entitlements.mac.plist:1-38):
+```xml
+<!-- Required for performance -->
+<key>com.apple.security.cs.allow-jit</key><true/>
+<key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/>
+<key>com.apple.security.cs.allow-dyld-environment-variables</key><true/>
+```
+
+#### Issue: Build Cache Problems
+```bash
+# Nuclear option - clean everything
+rm -rf release dist node_modules ~/Library/Caches/electron-builder
+npm install
+npm run build
+npx electron-builder --mac --x64 --arm64
+```
+
+### App Version Management
+
+**Update version for new releases:**
+1. Edit `package.json`: `"version": "1.0.2"` → `"version": "1.0.3"`
+2. Rebuild: `npm run build && npx electron-builder --mac --x64 --arm64`
+3. Files will now be named: `ScreenVault-1.0.3.dmg`, etc.
 
 ---
 
@@ -606,6 +741,169 @@ git rebase main
 # OR merge main into branch
 git merge main
 ```
+
+---
+
+## 📦 GITHUB RELEASES & WEBSITE DEPLOYMENT
+
+### Creating a GitHub Release with Signed Files
+
+**After building signed & notarized app:**
+
+```bash
+# 1. Verify files exist
+ls -lh release/*.dmg release/*.zip | grep -v blockmap
+
+# 2. Create GitHub release
+gh release create v1.0.2 \
+  release/ScreenVault-1.0.2.dmg \
+  release/ScreenVault-1.0.2-arm64.dmg \
+  release/ScreenVault-1.0.2-mac.zip \
+  release/ScreenVault-1.0.2-arm64-mac.zip \
+  --title "ScreenVault v1.0.2 - Release Title" \
+  --notes "$(cat <<'EOF'
+# ScreenVault v1.0.2 - Release Title
+
+## What's New
+✅ Feature 1 description
+✅ Feature 2 description
+✅ Feature 3 description
+
+## Download Options
+
+### For Apple Silicon Macs (M1/M2/M3) - Recommended
+- **DMG:** `ScreenVault-1.0.2-arm64.dmg` (125 MB)
+- **ZIP:** `ScreenVault-1.0.2-arm64-mac.zip` (120 MB)
+
+### For Intel Macs
+- **DMG:** `ScreenVault-1.0.2.dmg` (131 MB)
+- **ZIP:** `ScreenVault-1.0.2-mac.zip` (127 MB)
+
+## Installation
+1. Download the appropriate DMG file for your Mac
+2. Open the DMG file
+3. Drag ScreenVault.app to your Applications folder
+4. Launch ScreenVault from Applications
+5. Grant necessary permissions when prompted
+
+## Security
+✅ **Code Signed** with Developer ID Application
+✅ **Notarized** by Apple
+✅ No "unidentified developer" warnings
+
+## System Requirements
+- macOS 11.0 or later
+- Apple Silicon (M1/M2/M3) or Intel processor
+- 100 MB free disk space
+
+---
+
+**Full changelog:** https://github.com/sharveen22/screenvault/compare/v1.0.1...v1.0.2
+EOF
+)"
+
+# 3. Verify release created
+gh release view v1.0.2
+
+# 4. View all release files
+gh release view v1.0.2 --json assets --jq '.assets[].name'
+```
+
+### Updating an Existing Release
+
+```bash
+# Upload new files (overwrites existing)
+gh release upload v1.0.2 release/ScreenVault-1.0.2-arm64.dmg --clobber
+
+# Delete old files from release
+gh release delete-asset v1.0.2 "ScreenVault-1.0.0-arm64.dmg" --yes
+
+# Edit release notes
+gh release edit v1.0.2 --notes "Updated release notes here"
+```
+
+### Website Download Link Updates
+
+**After creating GitHub release, update website download links:**
+
+1. **Edit `website/download.html`:**
+```html
+<!-- Line 157: Manual download button -->
+<a href="https://github.com/sharveen22/screenvault/releases/download/v1.0.2/ScreenVault-1.0.2-arm64.dmg"
+   class="manual-download" download>
+   Click here if download doesn't start
+</a>
+
+<!-- Lines 171-173: Auto-download JavaScript -->
+const downloadUrl = isAppleSilicon
+    ? 'https://github.com/sharveen22/screenvault/releases/download/v1.0.2/ScreenVault-1.0.2-arm64.dmg'
+    : 'https://github.com/sharveen22/screenvault/releases/download/v1.0.2/ScreenVault-1.0.2-arm64.dmg';
+```
+
+2. **Commit and push changes:**
+```bash
+git add website/download.html
+git commit -m "chore: Update download links to v1.0.2"
+git push origin main
+```
+
+3. **Deploy to Vercel:**
+```bash
+# If on feature branch, merge to main first
+git checkout main
+git merge feature/your-branch
+git push origin main
+
+# Vercel auto-deploys from main branch
+# Check deployment at: https://vercel.com/your-project
+```
+
+### Complete Release Workflow
+
+**Full end-to-end process:**
+
+```bash
+# 1. Update version in package.json
+# Edit package.json: "version": "1.0.2" → "1.0.3"
+
+# 2. Build signed & notarized app
+rm -rf release/
+npm run build && npx electron-builder --mac --x64 --arm64
+
+# 3. Create GitHub release
+gh release create v1.0.3 \
+  release/ScreenVault-1.0.3.dmg \
+  release/ScreenVault-1.0.3-arm64.dmg \
+  release/ScreenVault-1.0.3-mac.zip \
+  release/ScreenVault-1.0.3-arm64-mac.zip \
+  --title "ScreenVault v1.0.3 - Feature Name" \
+  --notes "Release notes..."
+
+# 4. Update website download links
+# Edit website/download.html with new v1.0.3 URLs
+
+# 5. Commit and push website changes
+git add package.json website/download.html
+git commit -m "chore: Release v1.0.3"
+git push origin main
+
+# 6. Wait 2-3 minutes for Vercel deployment
+# Test download at your website
+```
+
+### Release Checklist
+
+Before creating a release:
+- [ ] Version updated in `package.json`
+- [ ] Built with signing: `npx electron-builder --mac --x64 --arm64`
+- [ ] Verified signatures: `codesign -dv release/mac-arm64/ScreenVault.app`
+- [ ] Verified notarization: `spctl -a -vv release/mac-arm64/ScreenVault.app`
+- [ ] Tested app launches and works correctly
+- [ ] Created GitHub release with all 4 files (2 DMG + 2 ZIP)
+- [ ] Updated `website/download.html` with new version URLs
+- [ ] Committed and pushed to `main` branch
+- [ ] Verified Vercel deployment completed
+- [ ] Tested download from live website
 
 ---
 
@@ -936,13 +1234,20 @@ I'm continuing work on ScreenVault, an Electron-based macOS screenshot managemen
   - Instant folder rendering (no image loading delays)
   - Fixed double scrollbar issue in gallery section
   - Single clean scrollbar for better UX
-- ✅ **UI Improvements (PR #52):** 🔥 LATEST!
+- ✅ **UI Improvements (PR #52):**
   - Full-height gallery layout (removed bottom blank space)
   - 4-column grid with increased spacing (less cluttered tiles)
   - Keyboard shortcuts in clear text format (Cmd+Shift+S)
   - ScreenVault branding in sidebar (replaced Capture button)
   - Consistent folder styling (removed jarring blue colors)
   - Custom scrollbar styling (seamless with app theme)
+- ✅ **Code Signing & Notarization (v1.0.2):** 🔥 PRODUCTION READY!
+  - Fully signed with Developer ID Application certificate
+  - Notarized by Apple (no security warnings for users)
+  - Performance-optimized entitlements (JIT, WASM, file access)
+  - Universal binaries (Intel + Apple Silicon)
+  - GitHub releases with signed DMG/ZIP files
+  - Website auto-download integration
 
 **Latest PRs:**
 - PR #32: Duplicates Fix (merged)
@@ -957,10 +1262,11 @@ I'm continuing work on ScreenVault, an Electron-based macOS screenshot managemen
 - PR #47: Marketing Website Separation (merged)
 - PR #48: UI Design Improvements (merged)
 - PR #50: Folder UI Refinements (merged)
-- PR #52: UI Improvements - Gallery Layout, Branding, and Styling (merged) ← **LATEST PR**
+- PR #52: UI Improvements - Gallery Layout, Branding, and Styling (merged)
 
-**Current Branch:** `main` (all PRs merged)
-**Status:** Production-ready with polished UI, full-height gallery, custom scrollbars, and consistent branding
+**Current Version:** v1.0.2 (signed & notarized)
+**Current Branch:** `main`
+**Status:** **PRODUCTION READY** - Fully signed, notarized, and ready for public distribution
 
 **🚀 Quick Build & Launch:**
 ```bash
