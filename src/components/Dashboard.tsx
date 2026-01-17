@@ -132,8 +132,34 @@ export function Dashboard() {
     };
   }, [triggerRefresh, loadFolders]);
 
-  const handleImportFiles = async () => { setShowImportMenu(false); const result = await (window.electronAPI as any)?.import?.files?.(); if (result?.data?.length > 0) triggerRefresh(); };
-  const handleImportFolder = async () => { setShowImportMenu(false); const result = await (window.electronAPI as any)?.import?.folder?.(); if (result?.data) { loadFolders(); triggerRefresh(); } };
+  const handleImportFiles = async () => {
+    try {
+      setShowImportMenu(false);
+      console.log('[Dashboard] Import Files clicked');
+      const result = await (window.electronAPI as any)?.import?.files?.();
+      console.log('[Dashboard] Import Files result:', result);
+      if (result?.data?.length > 0) {
+        triggerRefresh();
+      }
+    } catch (error) {
+      console.error('[Dashboard] Import Files error:', error);
+    }
+  };
+
+  const handleImportFolder = async () => {
+    try {
+      setShowImportMenu(false);
+      console.log('[Dashboard] Import Folder clicked');
+      const result = await (window.electronAPI as any)?.import?.folder?.();
+      console.log('[Dashboard] Import Folder result:', result);
+      if (result?.data) {
+        loadFolders();
+        triggerRefresh();
+      }
+    } catch (error) {
+      console.error('[Dashboard] Import Folder error:', error);
+    }
+  };
   const handleCreateFolder = async (e: React.FormEvent) => { e.preventDefault(); if (!newFolderName.trim()) return; await (window.electronAPI as any)?.folder?.create?.(newFolderName, null); setNewFolderName(''); setIsCreatingFolder(false); loadFolders(); };
   const handleRenameFolder = async (id: string, newName: string) => { if (!newName.trim()) { setEditingFolderId(null); return; } await (window.electronAPI as any)?.folder?.rename?.(id, newName); setEditingFolderId(null); loadFolders(); };
   const handleDeleteFolder = async (id: string) => { const folder = folders.find(f => f.id === id); if (folder && window.confirm(`Delete "${folder.name}"?`)) { await (window.electronAPI as any)?.folder?.delete?.(id); if (activeView === id) setActiveView('all'); loadFolders(); triggerRefresh(); } };
@@ -245,7 +271,7 @@ export function Dashboard() {
                 <ChevronDown size={12} className="ml-auto" />
               </button>
               {showImportMenu && (
-                <div className="mt-1 bg-[#e9e6e4] border border-[#161419] rounded-lg shadow-lg overflow-hidden">
+                <div className="mt-1 bg-[#e9e6e4] border border-[#161419] rounded-lg shadow-lg overflow-hidden relative z-50">
                   <button onClick={handleImportFiles} className="w-full px-3 py-2 text-left text-xs text-[#161419] hover:bg-[#161419] hover:text-[#e9e6e4] flex items-center gap-2 transition-colors">
                     <Upload size={12} />Files
                   </button>
@@ -316,6 +342,10 @@ export function Dashboard() {
             <div className="flex items-center gap-2">
               <span className="font-medium">Capture Screenshot:</span>
               <kbd className="px-2 py-1 bg-[#161419] text-[#e9e6e4] rounded text-[10px] font-mono">Cmd+Shift+S</kbd>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="font-medium">Fullscreen Capture:</span>
+              <kbd className="px-2 py-1 bg-[#161419] text-[#e9e6e4] rounded text-[10px] font-mono">Cmd+Shift+D</kbd>
             </div>
             <div className="flex items-center gap-2">
               <span className="font-medium">Open App:</span>
