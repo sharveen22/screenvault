@@ -5,11 +5,16 @@
 **ScreenVault** is an Electron-based macOS screenshot management application that captures, organizes, and searches screenshots with OCR capabilities.
 
 ### Core Functionality
-- **Screenshot Capture:** Cmd+Shift+S triggers native macOS screenshot tool
+- **Screenshot Capture:**
+  - Cmd+Shift+S: Interactive selection (native macOS screenshot tool)
+  - Cmd+Shift+D: Fullscreen capture (entire screen instantly)
 - **Apple-Style Thumbnail Preview:** Small preview appears in bottom-LEFT corner after capture
 - **Auto-Save:** Screenshots auto-save after 6 seconds if not clicked
 - **Auto-Clipboard:** Screenshots automatically copied to clipboard for immediate pasting
 - **Editor Window:** Click thumbnail to open annotation editor (NO delete button - delete from main app)
+  - Crystal clear image rendering with high-quality canvas
+  - Precise arrow annotations (line stops at triangle tip)
+  - Appears in Cmd+Tab switcher for easy app switching
 - **OCR Processing:** Automatic text extraction using Tesseract.js with smart 3-phase tag generation
 - **Smart Filenames:** OCR-generated filenames sync to local folder
 - **Import Screenshots/Folders:** Import existing screenshots or entire folders
@@ -19,87 +24,73 @@
 - **Drag-and-Drop:** Drag screenshots to external apps (WhatsApp, VS Code, etc.) and between folders
 - **Folder Access:** Quick access button to open local screenshots folder
 - **Local Storage:** SQLite database + file system (~/Pictures/ScreenVault/)
-- **System Integration:** Menu bar icon, global shortcuts, notifications
+- **System Integration:** Menu bar icon, global shortcuts (Cmd+Shift+S, Cmd+Shift+D, Cmd+Shift+A), notifications
 
 ---
 
-## 🎯 LATEST FEATURES (January 16, 2026)
+## 🎯 LATEST FEATURES (January 17, 2026)
 
-### 1. Editor Window Behavior Fixes (v1.0.3 - In Progress) 🎯
+### 1. Editor Window Improvements & Fullscreen Screenshot (v1.0.3 - PR #55) 🎯
 
-#### Issue 1: Main Window Popping Up When Opening Editor ✅ FIXED
-**Problem:** When clicking thumbnail preview to open editor, the main app window would pop up in the background.
+#### Editor Window Improvements ✅
 
-**Root Cause:** Multiple factors:
-1. `popup:edit` IPC handler was calling `mainWindow.show()`
-2. App activation events weren't being prevented
-3. File watcher was running OCR during editor loading, causing file rename race conditions
+**1. Fixed Cmd+Tab Behavior**
+- **Problem:** Editor window wasn't appearing in Cmd+Tab switcher, staying on top when switching apps
+- **Solution:** Changed `skipTaskbar: false` in editor BrowserWindow configuration
+- **Result:** Editor now appears in macOS application switcher and properly goes to background
 
-**Solution Implemented:**
-- **Removed `mainWindow.show()`** from `popup:edit` handler
-- **Added `isOpeningEditor` flag** to prevent `activate` event from showing main window
-- **Delayed OCR processing** until after editor closes to prevent file renaming during editing
-- **Main window stays in background** while editor is open (accepted behavior after research)
+**2. Enhanced Image Sharpness**
+- **Problem:** Images appeared blurry in the editor canvas
+- **Solution:**
+  - Added `imageSmoothingEnabled: true` and `imageSmoothingQuality: 'high'` to canvas context
+  - Optimized CSS rendering with `imageRendering: 'crisp-edges'`
+  - Removed CSS width/height 100% that was causing scaling blur
+- **Result:** Images now render crystal clear at full resolution
 
-**Files Modified:**
+**3. Fixed Arrow Annotation Precision**
+- **Problem:** Arrow line extended beyond triangle tip, making pointing imprecise
+- **Solution:**
+  - Line now stops at base of arrowhead (70% back from tip)
+  - Triangle tip is exactly where user clicks
+  - Added `closePath()` for cleaner triangle rendering
+- **Result:** Arrows point precisely at intended targets
+
+#### New Feature: Fullscreen Screenshot 🆕
+
+**Shortcut: Cmd+Shift+D**
+- Captures **entire screen instantly** (no selection UI)
+- Auto-copies to clipboard for immediate pasting
+- Shows Apple-style thumbnail preview in bottom-left corner
+- Same workflow as interactive screenshots:
+  - Click thumbnail to edit
+  - Auto-save after 6 seconds
+  - Full OCR processing and tagging
+- Works alongside existing Cmd+Shift+S (interactive screenshot)
+
+**Where Available:**
+1. **Global Shortcut:** Cmd+Shift+D
+2. **Tray Menu:** "Take Fullscreen Screenshot (Cmd+Shift+D)"
+
+**Files Modified (PR #55):**
 - `electron/main.js`:
-  - Line 42: Added `isOpeningEditor` flag
-  - Lines 606-634: Modified `handleThumbnailClick()` to set flag and verify file existence
-  - Lines 1292-1305: Removed `mainWindow.show()` from `popup:edit` handler
-  - Lines 1655-1673: Modified `activate` handler to check `isOpeningEditor` flag
-  - Lines 1118-1127: Reset flag when editor closes
-  - Lines 2817-2824: Skip OCR if file is currently open in editor
-  - Lines 1208-1214: Trigger OCR after editor saves
-
-**Technical Details:**
-- OCR was renaming files (e.g., `screenshot_2026-01-16_14-29-26.png` → `code_terminal_npm_install.png`) while editor tried to load them
-- This caused "loading..." state because file didn't exist at expected path
-- Solution: Check `lastScreenshotPath` in folder watcher's `importFileInPlace()` and skip OCR until editor closes
-
-**Research Finding:**
-- macOS/Electron limitation: Cannot show a hidden window without bringing it to front
-- `showInactive()` doesn't work as expected on macOS (documented in Electron GitHub issues)
-- Accepted solution: Main window stays visible in background, user can Cmd+Tab to other apps
-
-#### Issue 2: Editor Window Stays On Top During Cmd+Tab ✅ FIXED
-**Problem:** When editor window is open and user Cmd+Tabs to other apps, editor window stays on top instead of going to background.
-
-**Root Cause:** Editor window was using `type: 'panel'` which gives special macOS behavior where panels float above other windows.
-
-**Solution:**
-- **Removed `type: 'panel'`** from editor BrowserWindow configuration
-- Editor now behaves like a normal window and properly goes to background when switching apps
-
-**Files Modified:**
-- `electron/main.js` (lines 1061-1079): Removed `type: 'panel'` from BrowserWindow options
-
-**Before:**
-```javascript
-popupWindow = new BrowserWindow({
-  // ...
-  type: 'panel', // ❌ Causes window to stay on top
-  // ...
-});
-```
-
-**After:**
-```javascript
-popupWindow = new BrowserWindow({
-  // ...
-  // ✅ Normal window behavior - respects Cmd+Tab properly
-  // ...
-});
-```
-
-**Cleanup:**
-- Removed unused `wasMainWindowVisibleBeforeEditor` flag and related tracking code
-- Simplified window management logic to only use `isOpeningEditor` flag
+  - Line 1070: Changed `skipTaskbar: false` for editor window
+  - Lines 1387-1415: New `takeFullscreenScreenshot()` function
+  - Lines 1530-1592: New `captureFullscreen()` using `screencapture -c`
+  - Line 1682: Registered `CommandOrControl+Shift+D` global shortcut
+  - Line 326: Added tray menu item for fullscreen capture
+- `src/components/Editor.tsx`:
+  - Lines 205-207: Added high-quality image smoothing
+  - Lines 676-682: Optimized canvas CSS for sharp rendering
+  - Lines 255-277: Fixed arrow drawing to end at triangle tip
+- `SCREENVAULT_CONTEXT.md`: Updated documentation
 
 **Testing:**
-1. Take screenshot → Click thumbnail → Editor opens, main window stays in background ✅
-2. Editor open → Cmd+Tab to other apps → Editor goes to background ✅
-3. Editor open → Click "Done" → Editor closes, main window stays where it was ✅
-4. Edited images refresh immediately in gallery after saving ✅
+- [x] Editor appears in Cmd+Tab switcher and goes to background
+- [x] Images render sharp and clear in editor
+- [x] Arrow annotations point precisely at targets
+- [x] Cmd+Shift+D captures fullscreen instantly
+- [x] Fullscreen screenshots show thumbnail preview
+- [x] Both shortcuts work independently (Cmd+Shift+S and Cmd+Shift+D)
 
 ### 2. Code Signing & Notarization (v1.0.2) 🔥 PRODUCTION READY!
 **App is now fully signed and notarized by Apple for secure distribution**
@@ -1496,12 +1487,12 @@ I'm continuing work on ScreenVault, an Electron-based macOS screenshot managemen
   - Universal binaries (Intel + Apple Silicon)
   - GitHub releases with signed DMG/ZIP files
   - Website auto-download integration
-- ✅ **Editor Window Behavior Fixes (v1.0.3 - In Progress):**
-  - Main window no longer pops up when opening editor (stays in background)
-  - Editor respects Cmd+Tab - properly goes to background when switching apps
-  - Fixed OCR file rename race condition during editor loading
-  - Removed `type: 'panel'` from editor window for normal window behavior
-  - Cleaned up unused window visibility tracking code
+- ✅ **Editor Window Improvements & Fullscreen Screenshot (v1.0.3 - PR #55):**
+  - Fixed Cmd+Tab behavior - editor appears in app switcher and goes to background
+  - Enhanced image sharpness - crystal clear canvas rendering
+  - Fixed arrow annotation precision - line stops at triangle tip
+  - NEW: Fullscreen screenshot capture (Cmd+Shift+D)
+  - Added tray menu item for fullscreen capture
 
 **Latest PRs:**
 - PR #32: Duplicates Fix (merged)
@@ -1517,10 +1508,11 @@ I'm continuing work on ScreenVault, an Electron-based macOS screenshot managemen
 - PR #48: UI Design Improvements (merged)
 - PR #50: Folder UI Refinements (merged)
 - PR #52: UI Improvements - Gallery Layout, Branding, and Styling (merged)
+- PR #55: Editor Window Improvements & Fullscreen Screenshot (OPEN) 🎯
 
-**Current Version:** v1.0.3 (in development - editor window fixes)
-**Current Branch:** `main`
-**Status:** Testing editor window behavior fixes before release
+**Current Version:** v1.0.3 (in development - PR #55 open)
+**Current Branch:** `feature/editor-improvements-and-fullscreen-capture`
+**Status:** PR #55 ready for review and merge
 
 **🚀 Quick Build & Launch:**
 ```bash
@@ -1738,27 +1730,31 @@ I'm continuing work on ScreenVault, an Electron-based macOS screenshot managemen
 
 Please read the full context from SCREENVAULT_CONTEXT.md in the workspace.
 
-Current version: v1.0.3 (in development - editor window behavior fixes)
-Current branch: main
+Current version: v1.0.3 (in development - PR #55 open)
+Current branch: feature/editor-improvements-and-fullscreen-capture
+Open PR: https://github.com/sharveen22/screenvault/pull/55
 
-Latest changes made:
-1. Fixed main window popping up when opening editor (now stays in background)
-2. Fixed editor window staying on top during Cmd+Tab (removed type: 'panel')
-3. Fixed OCR file rename race condition during editor loading
-4. Cleaned up unused window visibility tracking code
+Latest changes (PR #55):
+1. Fixed editor window Cmd+Tab behavior (changed skipTaskbar: false)
+2. Enhanced image sharpness in editor (high-quality canvas rendering)
+3. Fixed arrow annotation precision (line stops at triangle tip)
+4. NEW: Fullscreen screenshot capture (Cmd+Shift+D)
 
 Files modified:
-- electron/main.js: Window management, OCR timing, editor window configuration
+- electron/main.js: Editor window config, fullscreen screenshot implementation, shortcuts
+- src/components/Editor.tsx: Canvas rendering improvements, arrow drawing fix
+- SCREENVAULT_CONTEXT.md: Documentation updates
 
 Quick test build command:
-pkill -f "ScreenVault" 2>/dev/null; sleep 1; npm run build && npx electron-builder --mac --dir -c.mac.identity=null && open release/mac-arm64/ScreenVault.app
+mv .env .env.backup 2>/dev/null || true; pkill -f "ScreenVault" 2>/dev/null; sleep 1; npm run build && npx electron-builder --mac --dir -c.mac.identity=null && mv .env.backup .env 2>/dev/null || true; open release/mac-arm64/ScreenVault.app
 
 For production release (signed & notarized):
 rm -rf release/ && npm run build && npx electron-builder --mac --x64 --arm64
 
 See SCREENVAULT_CONTEXT.md sections:
-- "Editor Window Behavior Fixes (v1.0.3)" for latest changes
-- "Complete Release Workflow" for GitHub release and website deployment steps
+- "Editor Window Improvements & Fullscreen Screenshot (v1.0.3)" for latest changes
+- "Create New Branch & PR Workflow" for GitHub workflow
+- "Complete Release Workflow" for release and deployment
 - "BUILD, SIGN & LAUNCH COMMANDS" for all build commands
 ```
 
