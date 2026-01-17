@@ -23,9 +23,58 @@
 
 ---
 
-## 🎯 LATEST FEATURES (January 16, 2026)
+## 🎯 LATEST FEATURES (January 17, 2026)
 
-### 1. Editor Window Behavior Fixes (v1.0.3 - In Progress) 🎯
+### 1. Toolbar Shortcut & Import Menu Fix (v1.0.4 - PR #56) 🎯
+
+#### Added Cmd+Shift+D to Toolbar ✅
+**Problem:** New fullscreen capture shortcut (Cmd+Shift+D) from PR #55 wasn't visible in the toolbar.
+
+**Solution:**
+- Added "Fullscreen Capture: Cmd+Shift+D" to keyboard shortcuts toolbar
+- Positioned between "Capture Screenshot" and "Open App" shortcuts
+- All 5 shortcuts now evenly spaced using `justify-between`
+
+**Toolbar Layout (5 Items):**
+1. Capture Screenshot: Cmd+Shift+S
+2. **Fullscreen Capture: Cmd+Shift+D** (NEW)
+3. Open App: Cmd+Shift+A
+4. Refresh Gallery: Cmd+R
+5. Drag to Move: Click+Drag
+
+#### Fixed Import Menu Buttons ✅
+**Problem:** Import Files and Import Folder buttons were completely unclickable.
+
+**Root Cause:**
+- Import dropdown menu had no z-index (defaults to 0)
+- Backdrop overlay had `z-40`
+- Backdrop was covering the menu items
+- Clicks hit the invisible backdrop instead of buttons
+
+**Solution:**
+- Added `relative z-50` to dropdown menu container
+- Menu now appears above backdrop (`z-50` > `z-40`)
+- Buttons are now clickable and trigger file/folder picker dialogs
+
+**Enhanced Error Handling:**
+- Added try/catch blocks to import handlers
+- Added console logging for debugging
+- Helps identify future import issues
+
+**Files Modified:**
+- `src/components/Dashboard.tsx`:
+  - Lines 135-161: Enhanced import handlers with error handling and logging
+  - Line 274: Added `z-50` to dropdown menu
+  - Lines 346-350: Added Cmd+Shift+D shortcut to toolbar
+
+**Testing:**
+- [x] Cmd+Shift+D visible in toolbar with proper spacing
+- [x] Import dropdown opens correctly
+- [x] Import Files button opens file picker dialog
+- [x] Import Folder button opens folder picker dialog
+- [x] Selected files/folders import successfully
+
+### 2. Editor Window Improvements & Fullscreen Screenshot (v1.0.3 - PR #55) ✅ MERGED
 
 #### Issue 1: Main Window Popping Up When Opening Editor ✅ FIXED
 **Problem:** When clicking thumbnail preview to open editor, the main app window would pop up in the background.
@@ -101,7 +150,68 @@ popupWindow = new BrowserWindow({
 3. Editor open → Click "Done" → Editor closes, main window stays where it was ✅
 4. Edited images refresh immediately in gallery after saving ✅
 
-### 2. Code Signing & Notarization (v1.0.2) 🔥 PRODUCTION READY!
+### 3. Editor Window Improvements & Fullscreen Screenshot (v1.0.3 - PR #55) ✅ MERGED
+
+#### Editor Window Improvements ✅
+
+**1. Fixed Cmd+Tab Behavior**
+- **Problem:** Editor window wasn't appearing in Cmd+Tab switcher, staying on top when switching apps
+- **Solution:** Changed `skipTaskbar: false` in editor BrowserWindow configuration
+- **Result:** Editor now appears in macOS application switcher and properly goes to background
+
+**2. Enhanced Image Sharpness**
+- **Problem:** Images appeared blurry in the editor canvas
+- **Solution:**
+  - Added `imageSmoothingEnabled: true` and `imageSmoothingQuality: 'high'` to canvas context
+  - Optimized CSS rendering with `imageRendering: 'crisp-edges'`
+  - Removed CSS width/height 100% that was causing scaling blur
+- **Result:** Images now render crystal clear at full resolution
+
+**3. Fixed Arrow Annotation Precision**
+- **Problem:** Arrow line extended beyond triangle tip, making pointing imprecise
+- **Solution:**
+  - Line now stops at base of arrowhead (70% back from tip)
+  - Triangle tip is exactly where user clicks
+  - Added `closePath()` for cleaner triangle rendering
+- **Result:** Arrows point precisely at intended targets
+
+#### New Feature: Fullscreen Screenshot 🆕
+
+**Shortcut: Cmd+Shift+D**
+- Captures **entire screen instantly** (no selection UI)
+- Auto-copies to clipboard for immediate pasting
+- Shows Apple-style thumbnail preview in bottom-left corner
+- Same workflow as interactive screenshots:
+  - Click thumbnail to edit
+  - Auto-save after 6 seconds
+  - Full OCR processing and tagging
+- Works alongside existing Cmd+Shift+S (interactive screenshot)
+
+**Where Available:**
+1. **Global Shortcut:** Cmd+Shift+D
+2. **Tray Menu:** "Take Fullscreen Screenshot (Cmd+Shift+D)"
+
+**Files Modified (PR #55):**
+- `electron/main.js`:
+  - Line 1070: Changed `skipTaskbar: false` for editor window
+  - Lines 1387-1415: New `takeFullscreenScreenshot()` function
+  - Lines 1530-1592: New `captureFullscreen()` using `screencapture -c`
+  - Line 1682: Registered `CommandOrControl+Shift+D` global shortcut
+  - Line 326: Added tray menu item for fullscreen capture
+- `src/components/Editor.tsx`:
+  - Lines 205-207: Added high-quality image smoothing
+  - Lines 676-682: Optimized canvas CSS for sharp rendering
+  - Lines 255-277: Fixed arrow drawing to end at triangle tip
+
+**Testing:**
+- [x] Editor appears in Cmd+Tab switcher and goes to background
+- [x] Images render sharp and clear in editor
+- [x] Arrow annotations point precisely at targets
+- [x] Cmd+Shift+D captures fullscreen instantly
+- [x] Fullscreen screenshots show thumbnail preview
+- [x] Both shortcuts work independently (Cmd+Shift+S and Cmd+Shift+D)
+
+### 4. Code Signing & Notarization (v1.0.2) 🔥 PRODUCTION READY!
 **App is now fully signed and notarized by Apple for secure distribution**
 
 #### Apple Developer ID Signing ✅
@@ -1496,12 +1606,16 @@ I'm continuing work on ScreenVault, an Electron-based macOS screenshot managemen
   - Universal binaries (Intel + Apple Silicon)
   - GitHub releases with signed DMG/ZIP files
   - Website auto-download integration
-- ✅ **Editor Window Behavior Fixes (v1.0.3 - In Progress):**
-  - Main window no longer pops up when opening editor (stays in background)
-  - Editor respects Cmd+Tab - properly goes to background when switching apps
-  - Fixed OCR file rename race condition during editor loading
-  - Removed `type: 'panel'` from editor window for normal window behavior
-  - Cleaned up unused window visibility tracking code
+- ✅ **Editor Window Improvements & Fullscreen Screenshot (v1.0.3 - PR #55):** MERGED
+  - Editor appears in Cmd+Tab and goes to background properly
+  - Crystal clear image rendering in editor
+  - Precise arrow annotations
+  - NEW: Fullscreen screenshot (Cmd+Shift+D)
+  - Tray menu support for fullscreen capture
+- 🎯 **Toolbar Shortcut & Import Menu Fix (v1.0.4 - PR #56):** OPEN
+  - Added Cmd+Shift+D to keyboard shortcuts toolbar
+  - Fixed import menu z-index bug (buttons now clickable)
+  - Enhanced error handling for import functions
 
 **Latest PRs:**
 - PR #32: Duplicates Fix (merged)
@@ -1517,10 +1631,12 @@ I'm continuing work on ScreenVault, an Electron-based macOS screenshot managemen
 - PR #48: UI Design Improvements (merged)
 - PR #50: Folder UI Refinements (merged)
 - PR #52: UI Improvements - Gallery Layout, Branding, and Styling (merged)
+- PR #55: Editor Window Improvements & Fullscreen Screenshot (merged)
+- PR #56: Toolbar Shortcut & Import Menu Fix (OPEN) 🎯
 
-**Current Version:** v1.0.3 (in development - editor window fixes)
-**Current Branch:** `main`
-**Status:** Testing editor window behavior fixes before release
+**Current Version:** v1.0.4 (in development - PR #56 open)
+**Current Branch:** `feature/toolbar-shortcut-and-import-fix`
+**Status:** PR #56 ready for review and merge
 
 **🚀 Quick Build & Launch:**
 ```bash
@@ -1738,28 +1854,259 @@ I'm continuing work on ScreenVault, an Electron-based macOS screenshot managemen
 
 Please read the full context from SCREENVAULT_CONTEXT.md in the workspace.
 
-Current version: v1.0.3 (in development - editor window behavior fixes)
-Current branch: main
+Current version: v1.0.4 (in development - PR #56 open)
+Current branch: feature/toolbar-shortcut-and-import-fix
+Open PR: https://github.com/sharveen22/screenvault/pull/56
 
-Latest changes made:
-1. Fixed main window popping up when opening editor (now stays in background)
-2. Fixed editor window staying on top during Cmd+Tab (removed type: 'panel')
-3. Fixed OCR file rename race condition during editor loading
-4. Cleaned up unused window visibility tracking code
+Latest changes (PR #56):
+1. Added Cmd+Shift+D fullscreen capture shortcut to toolbar
+2. Fixed import menu z-index bug (buttons now clickable)
+3. Enhanced error handling for import functions with logging
 
 Files modified:
-- electron/main.js: Window management, OCR timing, editor window configuration
+- src/components/Dashboard.tsx: Toolbar shortcut, import menu z-index fix, error handling
 
-Quick test build command:
-pkill -f "ScreenVault" 2>/dev/null; sleep 1; npm run build && npx electron-builder --mac --dir -c.mac.identity=null && open release/mac-arm64/ScreenVault.app
+Quick test build command (unsigned - for development):
+mv .env .env.backup 2>/dev/null || true; pkill -f "ScreenVault" 2>/dev/null; sleep 1; npm run build && npx electron-builder --mac --dir -c.mac.identity=null && mv .env.backup .env 2>/dev/null || true; open release/mac-arm64/ScreenVault.app
 
 For production release (signed & notarized):
 rm -rf release/ && npm run build && npx electron-builder --mac --x64 --arm64
 
 See SCREENVAULT_CONTEXT.md sections:
-- "Editor Window Behavior Fixes (v1.0.3)" for latest changes
-- "Complete Release Workflow" for GitHub release and website deployment steps
+- "Toolbar Shortcut & Import Menu Fix (v1.0.4)" for latest changes
+- "Create New Branch & PR Workflow" for GitHub workflow
+- "Complete Release Workflow" for release and deployment
 - "BUILD, SIGN & LAUNCH COMMANDS" for all build commands
+```
+
+---
+
+## 🔄 COMMON WORKFLOWS
+
+### 1. Quick Build & Test (Development)
+```bash
+# Kill app, build unsigned, launch
+mv .env .env.backup 2>/dev/null || true
+pkill -f "ScreenVault" 2>/dev/null
+sleep 1
+npm run build && npx electron-builder --mac --dir -c.mac.identity=null
+mv .env.backup .env 2>/dev/null || true
+open release/mac-arm64/ScreenVault.app
+```
+
+### 2. Create New Feature Branch & PR
+```bash
+# Step 1: Start from latest main
+git checkout main
+git pull origin main
+
+# Step 2: Create new feature branch
+git checkout -b feature/your-feature-name
+
+# Step 3: Make changes, then stage them
+git add src/components/Dashboard.tsx electron/main.js
+# OR add all changes:
+git add -A
+
+# Step 4: Commit with detailed message
+git commit -m "$(cat <<'EOF'
+feat: Your feature title
+
+## Changes
+- Change 1 description
+- Change 2 description
+- Change 3 description
+
+## Technical Details
+- src/components/Dashboard.tsx: What changed and why
+- electron/main.js: What changed and why
+
+## Testing
+- [x] Tested scenario 1
+- [x] Tested scenario 2
+
+Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>
+EOF
+)"
+
+# Step 5: Push branch to GitHub
+git push -u origin feature/your-feature-name
+
+# Step 6: Create Pull Request
+gh pr create --title "Your PR Title" --body "$(cat <<'EOF'
+## Summary
+Brief description of what this PR accomplishes.
+
+## Changes
+- Change 1
+- Change 2
+- Change 3
+
+## Files Modified
+- `file1.tsx` - Description
+- `file2.tsx` - Description
+
+## Testing
+- [x] Tested scenario 1
+- [x] Tested scenario 2
+
+---
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+EOF
+)" --base main
+
+# Step 7: View the PR
+gh pr view
+```
+
+### 3. Production Release (After PR Merged)
+```bash
+# ============================================
+# STEP 1: UPDATE VERSION
+# ============================================
+# Edit package.json manually:
+# Change "version": "1.0.3" to "version": "1.0.4"
+
+# ============================================
+# STEP 2: BUILD SIGNED & NOTARIZED APP
+# ============================================
+# Ensure .env file exists with Apple credentials:
+# APPLE_ID=sharveenkumar@gmail.com
+# APPLE_APP_SPECIFIC_PASSWORD=xxxx-xxxx-xxxx-xxxx
+# APPLE_TEAM_ID=YG5879BX5G
+
+# Clean previous builds
+rm -rf release/
+
+# Build for both architectures with signing and notarization
+# This will take 5-15 minutes due to Apple notarization
+npm run build && npx electron-builder --mac --x64 --arm64
+
+# ============================================
+# STEP 3: VERIFY SIGNING & NOTARIZATION
+# ============================================
+# Check code signature
+codesign -dv --verbose=4 "release/mac-arm64/ScreenVault.app"
+# Should show: Authority=Developer ID Application: CATALYST GROWTH SG PTE. LTD.
+
+# Verify notarization (Gatekeeper check)
+spctl -a -vv -t install "release/mac-arm64/ScreenVault.app"
+# Should show: accepted, source=Notarized Developer ID
+
+# ============================================
+# STEP 4: TEST THE BUILT APP
+# ============================================
+open release/mac-arm64/ScreenVault.app
+# Test all features thoroughly
+
+# ============================================
+# STEP 5: CREATE GITHUB RELEASE
+# ============================================
+# Verify all 4 files exist
+ls -lh release/*.dmg release/*.zip | grep -v blockmap
+
+# Create GitHub release with all files
+gh release create v1.0.4 \
+  release/ScreenVault-1.0.4.dmg \
+  release/ScreenVault-1.0.4-arm64.dmg \
+  release/ScreenVault-1.0.4-mac.zip \
+  release/ScreenVault-1.0.4-arm64-mac.zip \
+  --title "ScreenVault v1.0.4 - Toolbar Shortcut & Import Menu Fix" \
+  --notes "$(cat <<'EOF'
+# ScreenVault v1.0.4 - Toolbar Shortcut & Import Menu Fix
+
+## What's New
+✅ Added Cmd+Shift+D shortcut to keyboard shortcuts toolbar
+✅ Fixed import menu buttons (Files/Folder) not working
+✅ Enhanced error handling for import operations
+
+## Download Options
+
+### For Apple Silicon Macs (M1/M2/M3) - Recommended
+- **DMG:** `ScreenVault-1.0.4-arm64.dmg` (~125 MB)
+- **ZIP:** `ScreenVault-1.0.4-arm64-mac.zip` (~120 MB)
+
+### For Intel Macs
+- **DMG:** `ScreenVault-1.0.4.dmg` (~131 MB)
+- **ZIP:** `ScreenVault-1.0.4-mac.zip` (~127 MB)
+
+## Installation
+1. Download the appropriate DMG file for your Mac
+2. Open the DMG file
+3. Drag ScreenVault.app to your Applications folder
+4. Launch ScreenVault from Applications
+5. Grant necessary permissions when prompted
+
+## Security
+✅ **Code Signed** with Developer ID Application
+✅ **Notarized** by Apple
+✅ No "unidentified developer" warnings
+
+## System Requirements
+- macOS 11.0 or later
+- Apple Silicon (M1/M2/M3) or Intel processor
+- 100 MB free disk space
+
+---
+
+**Full changelog:** https://github.com/sharveen22/screenvault/compare/v1.0.3...v1.0.4
+EOF
+)"
+
+# Verify release was created
+gh release view v1.0.4
+
+# ============================================
+# STEP 6: UPDATE WEBSITE DOWNLOAD LINKS
+# ============================================
+# Edit website/download.html
+# Update line 157 (manual download button):
+# Change v1.0.3 to v1.0.4 in the href URL
+
+# Update lines 171-173 (auto-download JavaScript):
+# Change both v1.0.3 to v1.0.4 in downloadUrl
+
+# ============================================
+# STEP 7: COMMIT & PUSH CHANGES
+# ============================================
+git checkout main
+git add package.json website/download.html SCREENVAULT_CONTEXT.md
+git commit -m "chore: Release v1.0.4
+
+## Changes
+- Updated version to v1.0.4
+- Updated website download links to point to v1.0.4
+- Updated context documentation
+
+Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>"
+
+git push origin main
+
+# Vercel will automatically deploy the updated website
+```
+
+### 4. Check Git Status
+```bash
+git status                           # See modified files
+git log --oneline -10               # Recent commits
+git log origin/main..HEAD --oneline # Commits ahead of main
+gh pr list                          # List open PRs
+git branch -a                       # List all branches
+```
+
+### 5. Merge PR and Update Local Main
+```bash
+# Merge PR via GitHub UI or CLI
+gh pr merge 56 --merge
+
+# Update local main
+git checkout main
+git pull origin main
+
+# Delete old feature branch (optional)
+git branch -d feature/toolbar-shortcut-and-import-fix
+git push origin --delete feature/toolbar-shortcut-and-import-fix
 ```
 
 ---
@@ -1836,3 +2183,57 @@ When ready to release v1.0.3:
    - Deploy to production
 
 **The app is production-ready with world-class performance!** 🎉
+
+---
+
+## 📝 COPY-PASTE READY COMMANDS
+
+### Development Build (Fast, Unsigned)
+```bash
+mv .env .env.backup 2>/dev/null || true; pkill -f "ScreenVault" 2>/dev/null; sleep 1; npm run build && npx electron-builder --mac --dir -c.mac.identity=null && mv .env.backup .env 2>/dev/null || true; open release/mac-arm64/ScreenVault.app
+```
+
+### Production Build (Signed & Notarized)
+```bash
+rm -rf release/ && npm run build && npx electron-builder --mac --x64 --arm64
+```
+
+### Verify Code Signing & Notarization
+```bash
+codesign -dv --verbose=4 "release/mac-arm64/ScreenVault.app"
+spctl -a -vv -t install "release/mac-arm64/ScreenVault.app"
+```
+
+### Create Feature Branch & Commit
+```bash
+git checkout main
+git pull origin main
+git checkout -b feature/my-feature
+git add -A
+git commit -m "feat: My feature description
+
+## Changes
+- Change 1
+- Change 2
+
+Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>"
+git push -u origin feature/my-feature
+```
+
+### View PR Status
+```bash
+gh pr list
+gh pr view 56
+```
+
+### Merge PR & Update Main
+```bash
+gh pr merge 56 --merge
+git checkout main
+git pull origin main
+```
+
+---
+
+**End of ScreenVault Context Document**
+**Last Updated: January 17, 2026**
