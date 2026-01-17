@@ -23,9 +23,85 @@
 
 ---
 
-## 🎯 LATEST FEATURES (January 15, 2026)
+## 🎯 LATEST FEATURES (January 16, 2026)
 
-### 1. Code Signing & Notarization (v1.0.2) 🔥 PRODUCTION READY!
+### 1. Editor Window Behavior Fixes (v1.0.3 - In Progress) 🎯
+
+#### Issue 1: Main Window Popping Up When Opening Editor ✅ FIXED
+**Problem:** When clicking thumbnail preview to open editor, the main app window would pop up in the background.
+
+**Root Cause:** Multiple factors:
+1. `popup:edit` IPC handler was calling `mainWindow.show()`
+2. App activation events weren't being prevented
+3. File watcher was running OCR during editor loading, causing file rename race conditions
+
+**Solution Implemented:**
+- **Removed `mainWindow.show()`** from `popup:edit` handler
+- **Added `isOpeningEditor` flag** to prevent `activate` event from showing main window
+- **Delayed OCR processing** until after editor closes to prevent file renaming during editing
+- **Main window stays in background** while editor is open (accepted behavior after research)
+
+**Files Modified:**
+- `electron/main.js`:
+  - Line 42: Added `isOpeningEditor` flag
+  - Lines 606-634: Modified `handleThumbnailClick()` to set flag and verify file existence
+  - Lines 1292-1305: Removed `mainWindow.show()` from `popup:edit` handler
+  - Lines 1655-1673: Modified `activate` handler to check `isOpeningEditor` flag
+  - Lines 1118-1127: Reset flag when editor closes
+  - Lines 2817-2824: Skip OCR if file is currently open in editor
+  - Lines 1208-1214: Trigger OCR after editor saves
+
+**Technical Details:**
+- OCR was renaming files (e.g., `screenshot_2026-01-16_14-29-26.png` → `code_terminal_npm_install.png`) while editor tried to load them
+- This caused "loading..." state because file didn't exist at expected path
+- Solution: Check `lastScreenshotPath` in folder watcher's `importFileInPlace()` and skip OCR until editor closes
+
+**Research Finding:**
+- macOS/Electron limitation: Cannot show a hidden window without bringing it to front
+- `showInactive()` doesn't work as expected on macOS (documented in Electron GitHub issues)
+- Accepted solution: Main window stays visible in background, user can Cmd+Tab to other apps
+
+#### Issue 2: Editor Window Stays On Top During Cmd+Tab ✅ FIXED
+**Problem:** When editor window is open and user Cmd+Tabs to other apps, editor window stays on top instead of going to background.
+
+**Root Cause:** Editor window was using `type: 'panel'` which gives special macOS behavior where panels float above other windows.
+
+**Solution:**
+- **Removed `type: 'panel'`** from editor BrowserWindow configuration
+- Editor now behaves like a normal window and properly goes to background when switching apps
+
+**Files Modified:**
+- `electron/main.js` (lines 1061-1079): Removed `type: 'panel'` from BrowserWindow options
+
+**Before:**
+```javascript
+popupWindow = new BrowserWindow({
+  // ...
+  type: 'panel', // ❌ Causes window to stay on top
+  // ...
+});
+```
+
+**After:**
+```javascript
+popupWindow = new BrowserWindow({
+  // ...
+  // ✅ Normal window behavior - respects Cmd+Tab properly
+  // ...
+});
+```
+
+**Cleanup:**
+- Removed unused `wasMainWindowVisibleBeforeEditor` flag and related tracking code
+- Simplified window management logic to only use `isOpeningEditor` flag
+
+**Testing:**
+1. Take screenshot → Click thumbnail → Editor opens, main window stays in background ✅
+2. Editor open → Cmd+Tab to other apps → Editor goes to background ✅
+3. Editor open → Click "Done" → Editor closes, main window stays where it was ✅
+4. Edited images refresh immediately in gallery after saving ✅
+
+### 2. Code Signing & Notarization (v1.0.2) 🔥 PRODUCTION READY!
 **App is now fully signed and notarized by Apple for secure distribution**
 
 #### Apple Developer ID Signing ✅
@@ -82,7 +158,7 @@
 - ✅ No performance degradation from signing
 - ✅ Ready for Mac App Store submission (if desired)
 
-### 2. Folder UI Refinements (PR #50)
+### 3. Folder UI Refinements (PR #50)
 **Compact, clean folder cards with consistent branding and optimized performance**
 
 #### Compact Folder Cards 📦
@@ -133,7 +209,7 @@
 - **Cleaner, more minimalist** appearance aligned with brand
 - **Better UX** with single scrollbar in gallery
 
-### 2. UI Design Improvements (PR #48)
+### 4. UI Design Improvements (PR #48)
 **Major UI/UX redesign with rounded corners, left sidebar, and enhanced visual hierarchy**
 
 #### Left Sidebar Layout (220px) 🎨
@@ -203,7 +279,7 @@
 - Better visual hierarchy makes features more discoverable
 - Improved usability with always-visible shortcuts
 
-### 3. Marketing Website Separation (PR #47)
+### 5. Marketing Website Separation (PR #47)
 **Complete separation of marketing landing page from Electron app**
 
 #### Dedicated Website Directory 🌐
@@ -243,7 +319,7 @@
 - Updated `README.md` - Added website structure documentation
 - Created `website/README.md` - Deployment instructions for all platforms
 
-### 4. UI Fixes & Real-time Updates (PR #45)
+### 6. UI Fixes & Real-time Updates (PR #45)
 **Real-time favorite counts, edited image refresh, and UI improvements**
 
 #### Real-time Favorite Count Updates ⭐
@@ -289,7 +365,7 @@
 - `index.html` - Simplified title tag
 - `SCREENVAULT_CONTEXT.md` - Updated documentation
 
-### 5. Performance Optimizations Phase 3 (PR #44) ⚡⚡⚡
+### 7. Performance Optimizations Phase 3 (PR #44) ⚡⚡⚡
 **LRU Cache + Smart OCR + Full-Resolution Viewing**
 
 #### LRU File Cache (Optimization #11)
@@ -370,7 +446,7 @@
 - OCR tags: **6-8 relevant tags** (vs 1-2 generic)
 - Memory: **Controlled at 50MB** (cache limit)
 
-### 6. Performance Optimizations Phase 2 (PR #42, #43) ⚡⚡
+### 8. Performance Optimizations Phase 2 (PR #42, #43) ⚡⚡
 **MASSIVE performance boost - Gallery now 10-20x faster with 100x less memory**
 
 #### Debounce & State Updates (PR #42)
@@ -427,7 +503,7 @@
 - Database queries **40% fewer** through smart debouncing
 - **Ready for production** - handles power users with massive libraries!
 
-### 7. Performance Optimizations Phase 1 (PR #40, #41) ⚡
+### 9. Performance Optimizations Phase 1 (PR #40, #41) ⚡
 **Foundational performance improvements - 5-10x faster overall**
 
 #### Database Indexes (PR #40)
@@ -452,7 +528,7 @@
 - Faster folder switching and view changes
 - 50-70% fewer unnecessary operations
 
-### 8. UI Enhancements & Bug Fixes (PR #38)
+### 10. UI Enhancements & Bug Fixes (PR #38)
 - **Screenshot Tile Display:** Changed from object-cover to object-contain so users can see entire screenshot without cropping
 - **Folder Section Redesign:**
   - Single-row horizontal scroll layout (was 2-row grid)
@@ -470,7 +546,7 @@
   - Press Escape key to close modal
 - **Real-time Favorites Count:** Fixed bug where favorites count wasn't updating in real-time
 
-### 9. Drag-and-Drop to External Apps (PR #39)
+### 11. Drag-and-Drop to External Apps (PR #39)
 - **External App Support:** Drag screenshots from ScreenVault directly to external applications
   - Works with WhatsApp, VS Code, Slack, and any app that accepts image files
   - Uses Electron's File API to create actual file objects during drag operations
@@ -478,12 +554,12 @@
 - **Native File Drag:** Implemented proper file:// protocol support with IPC handlers
 - **Drag Preview:** Blue box with camera emoji shown during drag operations
 
-### 10. Quick Folder Access (PR #39)
+### 12. Quick Folder Access (PR #39)
 - **Toolbar Button:** Added folder icon button in toolbar (between keyboard shortcuts and CAPTURE)
 - **One-Click Access:** Opens ~/Pictures/ScreenVault folder in Finder instantly
 - **IPC Handler:** Added file:open-screenshots-folder handler in main process
 
-### 11. Fixed Duplicate Screenshots & Editor Save (PR #32)
+### 13. Fixed Duplicate Screenshots & Editor Save (PR #32)
 - **No More Duplicates:** Added duplicate check in saveScreenshotToDatabase() to prevent double-saving
 - **Editor Save Fixed:** When saving from editor, updates existing screenshot instead of creating duplicate
 - **Handles OCR Renames:** Editor properly finds and updates screenshots even after OCR renames them
@@ -858,52 +934,224 @@ git push origin main
 # Check deployment at: https://vercel.com/your-project
 ```
 
-### Complete Release Workflow
+### Complete Release Workflow (Copy & Paste Ready!)
 
-**Full end-to-end process:**
+**Full end-to-end process for releasing a new version:**
 
 ```bash
-# 1. Update version in package.json
-# Edit package.json: "version": "1.0.2" → "1.0.3"
+# ============================================
+# STEP 1: UPDATE VERSION
+# ============================================
+# Edit package.json manually:
+# Change "version": "1.0.2" to "version": "1.0.3"
 
-# 2. Build signed & notarized app
+# ============================================
+# STEP 2: BUILD SIGNED & NOTARIZED APP
+# ============================================
+# Clean previous builds
 rm -rf release/
+
+# Build for both architectures with signing and notarization
+# This will take 5-15 minutes due to Apple notarization
 npm run build && npx electron-builder --mac --x64 --arm64
 
-# 3. Create GitHub release
+# ============================================
+# STEP 3: VERIFY SIGNING & NOTARIZATION
+# ============================================
+# Check code signature
+codesign -dv --verbose=4 "release/mac-arm64/ScreenVault.app"
+# Should show: Authority=Developer ID Application: CATALYST GROWTH SG PTE. LTD.
+
+# Verify notarization (Gatekeeper check)
+spctl -a -vv -t install "release/mac-arm64/ScreenVault.app"
+# Should show: accepted, source=Notarized Developer ID
+
+# ============================================
+# STEP 4: TEST THE BUILT APP
+# ============================================
+open release/mac-arm64/ScreenVault.app
+# Test all features:
+# - Screenshot capture (Cmd+Shift+S)
+# - Thumbnail preview click → Editor opens
+# - Editor window behavior (Cmd+Tab works correctly)
+# - Main window stays in background
+# - Save edited screenshots
+# - OCR processing
+# - Folder management
+
+# ============================================
+# STEP 5: CREATE GITHUB RELEASE
+# ============================================
+# Verify all 4 files exist
+ls -lh release/*.dmg release/*.zip | grep -v blockmap
+
+# Create GitHub release with all files
 gh release create v1.0.3 \
   release/ScreenVault-1.0.3.dmg \
   release/ScreenVault-1.0.3-arm64.dmg \
   release/ScreenVault-1.0.3-mac.zip \
   release/ScreenVault-1.0.3-arm64-mac.zip \
-  --title "ScreenVault v1.0.3 - Feature Name" \
-  --notes "Release notes..."
+  --title "ScreenVault v1.0.3 - Editor Window Behavior Fixes" \
+  --notes "$(cat <<'EOF'
+# ScreenVault v1.0.3 - Editor Window Behavior Fixes
 
-# 4. Update website download links
-# Edit website/download.html with new v1.0.3 URLs
+## What's New
+✅ Fixed main window popping up when opening editor - now stays in background
+✅ Fixed editor window staying on top during Cmd+Tab - now properly goes to background
+✅ Fixed OCR file rename race condition causing editor loading issues
+✅ Cleaned up window management code for better maintainability
 
-# 5. Commit and push website changes
+## Technical Improvements
+- Removed `type: 'panel'` from editor window for normal window behavior
+- Added `isOpeningEditor` flag to prevent unwanted window activation
+- Delayed OCR processing until after editor closes
+- Removed unused window visibility tracking code
+
+## Download Options
+
+### For Apple Silicon Macs (M1/M2/M3) - Recommended
+- **DMG:** `ScreenVault-1.0.3-arm64.dmg` (~125 MB)
+- **ZIP:** `ScreenVault-1.0.3-arm64-mac.zip` (~120 MB)
+
+### For Intel Macs
+- **DMG:** `ScreenVault-1.0.3.dmg` (~131 MB)
+- **ZIP:** `ScreenVault-1.0.3-mac.zip` (~127 MB)
+
+## Installation
+1. Download the appropriate DMG file for your Mac
+2. Open the DMG file
+3. Drag ScreenVault.app to your Applications folder
+4. Launch ScreenVault from Applications
+5. Grant necessary permissions when prompted
+
+## Security
+✅ **Code Signed** with Developer ID Application
+✅ **Notarized** by Apple
+✅ No "unidentified developer" warnings
+
+## System Requirements
+- macOS 11.0 or later
+- Apple Silicon (M1/M2/M3) or Intel processor
+- 100 MB free disk space
+
+---
+
+**Full changelog:** https://github.com/sharveen22/screenvault/compare/v1.0.2...v1.0.3
+EOF
+)"
+
+# Verify release was created
+gh release view v1.0.3
+
+# View all release files
+gh release view v1.0.3 --json assets --jq '.assets[].name'
+
+# ============================================
+# STEP 6: UPDATE WEBSITE DOWNLOAD LINKS
+# ============================================
+# Edit website/download.html
+# Update line 157 (manual download button):
+# Change v1.0.2 to v1.0.3 in the href URL
+
+# Update lines 171-173 (auto-download JavaScript):
+# Change both v1.0.2 to v1.0.3 in downloadUrl
+
+# ============================================
+# STEP 7: COMMIT & PUSH CHANGES
+# ============================================
 git add package.json website/download.html
-git commit -m "chore: Release v1.0.3"
+git commit -m "chore: Release v1.0.3
+
+## Changes
+- Updated version to v1.0.3
+- Updated website download links to point to v1.0.3
+
+Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>"
+
 git push origin main
 
-# 6. Wait 2-3 minutes for Vercel deployment
-# Test download at your website
+# ============================================
+# STEP 8: VERIFY DEPLOYMENT
+# ============================================
+# Wait 2-3 minutes for Vercel automatic deployment
+# Check deployment status at: https://vercel.com/your-project
+
+# Test download from live website
+# Visit your website and click download button
+# Verify it downloads v1.0.3 files from GitHub
+
+# ============================================
+# STEP 9: ANNOUNCE RELEASE (Optional)
+# ============================================
+# Share release on:
+# - Twitter/X
+# - Product Hunt (if launching publicly)
+# - Reddit (r/macapps, r/SideProject)
+# - Hacker News "Show HN"
 ```
 
 ### Release Checklist
 
-Before creating a release:
+**Pre-Release:**
+- [ ] All features tested and working
 - [ ] Version updated in `package.json`
-- [ ] Built with signing: `npx electron-builder --mac --x64 --arm64`
-- [ ] Verified signatures: `codesign -dv release/mac-arm64/ScreenVault.app`
-- [ ] Verified notarization: `spctl -a -vv release/mac-arm64/ScreenVault.app`
-- [ ] Tested app launches and works correctly
-- [ ] Created GitHub release with all 4 files (2 DMG + 2 ZIP)
-- [ ] Updated `website/download.html` with new version URLs
-- [ ] Committed and pushed to `main` branch
-- [ ] Verified Vercel deployment completed
-- [ ] Tested download from live website
+- [ ] `.env` file has correct Apple credentials
+- [ ] Git status is clean (all changes committed)
+
+**Build:**
+- [ ] Ran: `rm -rf release/ && npm run build && npx electron-builder --mac --x64 --arm64`
+- [ ] Build completed without errors
+- [ ] All 4 files created (2 DMG + 2 ZIP)
+
+**Verification:**
+- [ ] Code signature verified: `codesign -dv release/mac-arm64/ScreenVault.app`
+- [ ] Notarization verified: `spctl -a -vv release/mac-arm64/ScreenVault.app`
+- [ ] App launches from `release/mac-arm64/ScreenVault.app`
+- [ ] All features tested in built app
+
+**GitHub Release:**
+- [ ] GitHub release created with `gh release create v1.0.3`
+- [ ] All 4 files uploaded to release
+- [ ] Release notes include what's new, download links, installation steps
+- [ ] Release is public and visible
+
+**Website Update:**
+- [ ] `website/download.html` updated with new version URLs
+- [ ] Changes committed to git
+- [ ] Changes pushed to main branch
+- [ ] Vercel deployment completed (check vercel.com dashboard)
+- [ ] Website tested - download button works
+- [ ] Downloaded file is correct version
+
+**Post-Release:**
+- [ ] Tested complete download → install → launch flow
+- [ ] Updated SCREENVAULT_CONTEXT.md with latest version number
+- [ ] Announced release (optional)
+
+### Quick Commands Reference
+
+```bash
+# Check current version
+grep '"version"' package.json
+
+# List all releases
+gh release list
+
+# View specific release
+gh release view v1.0.3
+
+# Delete a release (if needed)
+gh release delete v1.0.3 --yes
+
+# Re-upload a file to existing release
+gh release upload v1.0.3 release/ScreenVault-1.0.3-arm64.dmg --clobber
+
+# Check Vercel deployment status
+vercel ls
+
+# Force Vercel redeploy
+vercel --prod
+```
 
 ---
 
@@ -1248,6 +1496,12 @@ I'm continuing work on ScreenVault, an Electron-based macOS screenshot managemen
   - Universal binaries (Intel + Apple Silicon)
   - GitHub releases with signed DMG/ZIP files
   - Website auto-download integration
+- ✅ **Editor Window Behavior Fixes (v1.0.3 - In Progress):**
+  - Main window no longer pops up when opening editor (stays in background)
+  - Editor respects Cmd+Tab - properly goes to background when switching apps
+  - Fixed OCR file rename race condition during editor loading
+  - Removed `type: 'panel'` from editor window for normal window behavior
+  - Cleaned up unused window visibility tracking code
 
 **Latest PRs:**
 - PR #32: Duplicates Fix (merged)
@@ -1264,9 +1518,9 @@ I'm continuing work on ScreenVault, an Electron-based macOS screenshot managemen
 - PR #50: Folder UI Refinements (merged)
 - PR #52: UI Improvements - Gallery Layout, Branding, and Styling (merged)
 
-**Current Version:** v1.0.2 (signed & notarized)
+**Current Version:** v1.0.3 (in development - editor window fixes)
 **Current Branch:** `main`
-**Status:** **PRODUCTION READY** - Fully signed, notarized, and ready for public distribution
+**Status:** Testing editor window behavior fixes before release
 
 **🚀 Quick Build & Launch:**
 ```bash
@@ -1474,3 +1728,111 @@ From original 15-point plan:
 - **Result:** 8 tags with category prioritization vs 1-2 generic words
 
 **The app is now production-ready with world-class performance!** 🎉
+
+---
+
+## 📋 QUICK START FOR NEXT SESSION (COPY THIS!)
+
+```
+I'm continuing work on ScreenVault, an Electron-based macOS screenshot management app.
+
+Please read the full context from SCREENVAULT_CONTEXT.md in the workspace.
+
+Current version: v1.0.3 (in development - editor window behavior fixes)
+Current branch: main
+
+Latest changes made:
+1. Fixed main window popping up when opening editor (now stays in background)
+2. Fixed editor window staying on top during Cmd+Tab (removed type: 'panel')
+3. Fixed OCR file rename race condition during editor loading
+4. Cleaned up unused window visibility tracking code
+
+Files modified:
+- electron/main.js: Window management, OCR timing, editor window configuration
+
+Quick test build command:
+pkill -f "ScreenVault" 2>/dev/null; sleep 1; npm run build && npx electron-builder --mac --dir -c.mac.identity=null && open release/mac-arm64/ScreenVault.app
+
+For production release (signed & notarized):
+rm -rf release/ && npm run build && npx electron-builder --mac --x64 --arm64
+
+See SCREENVAULT_CONTEXT.md sections:
+- "Editor Window Behavior Fixes (v1.0.3)" for latest changes
+- "Complete Release Workflow" for GitHub release and website deployment steps
+- "BUILD, SIGN & LAUNCH COMMANDS" for all build commands
+```
+
+---
+
+## 🎯 NEXT STEPS
+
+When ready to release v1.0.3:
+
+1. **Test the changes thoroughly:**
+   ```bash
+   pkill -f "ScreenVault" 2>/dev/null; sleep 1; npm run build && npx electron-builder --mac --dir -c.mac.identity=null && open release/mac-arm64/ScreenVault.app
+   ```
+
+2. **Create feature branch and PR:**
+   ```bash
+   git checkout -b feature/editor-window-fixes
+   git add electron/main.js SCREENVAULT_CONTEXT.md
+   git commit -m "fix: Editor window behavior improvements
+
+   ## Changes
+   - Fixed main window popping up when opening editor
+   - Fixed editor window staying on top during Cmd+Tab
+   - Fixed OCR file rename race condition
+   - Removed type: 'panel' from editor window
+   - Cleaned up unused window visibility tracking code
+
+   ## Technical Details
+   - electron/main.js: Added isOpeningEditor flag, removed wasMainWindowVisibleBeforeEditor
+   - electron/main.js: Delayed OCR until after editor closes
+   - electron/main.js: Removed type: 'panel' from BrowserWindow config
+
+   Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>"
+
+   git push -u origin feature/editor-window-fixes
+
+   gh pr create --title "Fix: Editor Window Behavior Improvements" --body "$(cat <<'EOF'
+   ## Summary
+   Fixes multiple editor window behavior issues for better UX.
+
+   ## Issues Fixed
+   1. Main window no longer pops up when opening editor
+   2. Editor window properly goes to background when Cmd+Tabbing to other apps
+   3. OCR no longer renames files while editor is loading them
+
+   ## Technical Changes
+   - Added `isOpeningEditor` flag to prevent unwanted window activation
+   - Removed `type: 'panel'` from editor BrowserWindow (was causing always-on-top behavior)
+   - Modified OCR timing to skip processing if file is currently open in editor
+   - Cleaned up unused `wasMainWindowVisibleBeforeEditor` flag
+
+   ## Testing
+   - [x] Screenshot capture → Click thumbnail → Editor opens, main window stays back
+   - [x] Editor open → Cmd+Tab to other apps → Editor goes to background properly
+   - [x] Editor loads without "loading..." issues
+   - [x] Save edited screenshots → Gallery updates immediately
+   - [x] OCR runs after editor closes
+
+   ## Files Modified
+   - `electron/main.js`: Window management, OCR timing, editor configuration
+   - `SCREENVAULT_CONTEXT.md`: Documentation updates
+
+   ---
+
+   🤖 Generated with [Claude Code](https://claude.com/claude-code)
+   EOF
+   )" --base main
+   ```
+
+3. **After PR is merged, follow the "Complete Release Workflow" in this document to:**
+   - Update version to v1.0.3 in package.json
+   - Build signed & notarized app
+   - Create GitHub release
+   - Update website download links
+   - Deploy to production
+
+**The app is production-ready with world-class performance!** 🎉

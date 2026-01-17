@@ -85,8 +85,11 @@ export function Editor() {
             console.log('[Editor] Received init with path:', path);
             setFilePath(path);
             // Load full-resolution image for editor (useThumbnail = false)
-            window.electronAPI.file.read(path, false).then(({ data }) => {
-                console.log('[Editor] File read result, has data:', !!data);
+            window.electronAPI.file.read(path, false).then(({ data, error }) => {
+                console.log('[Editor] File read result, has data:', !!data, 'error:', error);
+                if (error) {
+                    console.error('[Editor] File read error:', error);
+                }
                 if (data) {
                     const src = `data:image/png;base64,${data}`;
                     const img = new Image();
@@ -199,6 +202,10 @@ export function Editor() {
         if (canvas.width !== imageBitmap.width) canvas.width = imageBitmap.width;
         if (canvas.height !== imageBitmap.height) canvas.height = imageBitmap.height;
 
+        // Enable high-quality image rendering
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
         // Draw Background
@@ -250,15 +257,22 @@ export function Editor() {
         const dx = toX - fromX;
         const dy = toY - fromY;
         const angle = Math.atan2(dy, dx);
+
+        // Calculate the base of the arrowhead (where line should stop)
+        const baseX = toX - headlen * Math.cos(angle) * 0.7;
+        const baseY = toY - headlen * Math.sin(angle) * 0.7;
+
+        // Draw line stopping at the base of the arrowhead
         ctx.moveTo(fromX, fromY);
-        ctx.lineTo(toX, toY);
+        ctx.lineTo(baseX, baseY);
         ctx.stroke();
 
-        // Arrowhead
+        // Arrowhead triangle with tip at (toX, toY)
         ctx.beginPath();
-        ctx.moveTo(toX, toY);
+        ctx.moveTo(toX, toY); // Tip of arrow
         ctx.lineTo(toX - headlen * Math.cos(angle - Math.PI / 6), toY - headlen * Math.sin(angle - Math.PI / 6));
         ctx.lineTo(toX - headlen * Math.cos(angle + Math.PI / 6), toY - headlen * Math.sin(angle + Math.PI / 6));
+        ctx.closePath();
         ctx.fill();
     };
 
@@ -667,11 +681,11 @@ export function Editor() {
                         ref={canvasRef}
                         className="block rounded-sm bg-transparent"
                         style={{
-                            width: '100%',
-                            height: '100%',
                             maxWidth: '100%',
                             maxHeight: '100%',
-                            objectFit: 'contain'
+                            objectFit: 'contain',
+                            imageRendering: 'crisp-edges',
+                            WebkitFontSmoothing: 'antialiased'
                         }}
                     />
 

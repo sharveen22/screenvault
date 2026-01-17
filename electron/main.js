@@ -39,6 +39,7 @@ let tray;
 let currentUser = null;
 let isCapturing = false;
 let isQuitting = false; // Flag to track if app is actually quitting
+let isOpeningEditor = false; // Flag to prevent main window from showing when editor opens
 
 /* ====================== LRU CACHE ====================== */
 // Simple LRU Cache for file reads (50MB limit for instant re-renders)
@@ -264,9 +265,10 @@ function createWindow() {
   }
 
   mainWindow.once('ready-to-show', () => {
-    // Show window on first launch, dock is already hidden so this won't cause focus issues
+    // Show window and dock on app launch
     if (process.platform === 'darwin') app.dock.show();
     mainWindow.show();
+    sendLog('Main window shown on launch');
   });
 
   // Send focus event to renderer when window gains focus (for auto-refresh)
@@ -314,13 +316,14 @@ function createTray() {
 
   tray = new Tray(trayIcon);
   const menu = Menu.buildFromTemplate([
-    { label: 'Open ScreenVault', click: () => { 
+    { label: 'Open ScreenVault', click: () => {
       if (!isCapturing && mainWindow) {
         if (process.platform === 'darwin') app.dock.show();
         mainWindow.show();
       }
     }},
-    { label: 'Take Screenshot (Ctrl/Cmd+Shift+S)', click: () => takeScreenshotSystem() },
+    { label: 'Take Screenshot (Cmd+Shift+S)', click: () => takeScreenshotSystem() },
+    { label: 'Take Fullscreen Screenshot (Cmd+Shift+D)', click: () => takeFullscreenScreenshot() },
     { type: 'separator' },
     { label: 'Open Screen Recording Settings (macOS)', click: () => openMacScreenSettings() },
     { type: 'separator' },
@@ -603,19 +606,54 @@ function createThumbnailPreview(filePath) {
 // Handle thumbnail click - open editor popup
 function handleThumbnailClick(filePath) {
   sendLog('Thumbnail clicked - opening editor');
-  
+
+  // Set flag IMMEDIATELY to prevent main window from showing when app activates
+  isOpeningEditor = true;
+  sendLog('Set isOpeningEditor=true');
+
+  // DON'T hide dock or window - just rely on isOpeningEditor flag to prevent activation
+  sendLog('Opening editor - main window will stay in background via isOpeningEditor flag');
+
+  // Verify file exists before opening editor
+  sendLog(`Checking if file exists: ${filePath}`);
+  if (!fs.existsSync(filePath)) {
+    sendLog(`ERROR: Screenshot file not found: ${filePath}`, 'error');
+    // List files in directory to debug
+    const dir = path.dirname(filePath);
+    try {
+      const files = fs.readdirSync(dir);
+      sendLog(`Files in ${dir}: ${files.join(', ')}`);
+    } catch (e) {
+      sendLog(`Cannot list directory: ${e.message}`, 'error');
+    }
+    isOpeningEditor = false; // Reset flag on error
+    return;
+  }
+
+  // Verify file is readable
+  try {
+    const stats = fs.statSync(filePath);
+    sendLog(`File exists! Size: ${stats.size} bytes, path: ${filePath}`);
+    fs.accessSync(filePath, fs.constants.R_OK);
+    sendLog(`File verified readable: ${filePath}`);
+  } catch (err) {
+    sendLog(`ERROR: Cannot read screenshot file: ${err.message}`, 'error');
+    isOpeningEditor = false; // Reset flag on error
+    return;
+  }
+
   // Clear the auto-dismiss timeout
   if (popupTimeout) {
     clearTimeout(popupTimeout);
     popupTimeout = null;
   }
-  
+
   // Close thumbnail
   if (thumbnailWindow && !thumbnailWindow.isDestroyed()) {
     thumbnailWindow.close();
     thumbnailWindow = null;
   }
-  
+
   // Open editor popup (don't save yet - wait for user to click Done)
   lastScreenshotPath = filePath;
   screenshotWasSaved = false;
@@ -1027,11 +1065,10 @@ function createScreenshotPopup(filePath) {
     x: Math.floor((screenWidth - w) / 2),
     y: Math.floor((screenHeight - h) / 2),
     frame: false,
-    type: 'panel', // Use panel type for accessory app behavior
     resizable: true,
     alwaysOnTop: false,
     show: false,
-    skipTaskbar: true, // Help prevent dock icon on some platforms
+    skipTaskbar: false, // Allow editor to appear in Cmd+Tab switcher
     backgroundColor: '#1e1e1e',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -1044,27 +1081,42 @@ function createScreenshotPopup(filePath) {
   const isDev = process.env.NODE_ENV === 'development';
   if (isDev) {
     popupWindow.loadURL('http://localhost:5173/#editor');
+    popupWindow.webContents.openDevTools({ mode: 'detach' });
   } else {
     const indexPath = path.join(app.getAppPath(), "dist", "index.html");
+    sendLog(`Loading editor from: ${indexPath}`);
     popupWindow.loadFile(indexPath, { hash: 'editor' });
+    // Dev tools disabled in production
   }
 
+  // Add error handler
+  popupWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+    sendLog(`Editor failed to load: ${errorCode} - ${errorDescription}`, 'error');
+  });
+
   popupWindow.once('ready-to-show', () => {
+    sendLog('Editor window ready-to-show event fired');
     if (!popupWindow.isDestroyed()) {
       popupWindow.show();
 
-      // Send init data with a small delay to ensure renderer is ready
+      // Send init data with a longer delay to ensure renderer is ready
       setTimeout(() => {
         if (popupWindow && !popupWindow.isDestroyed()) {
           sendLog(`Sending popup:init with filePath: ${filePath}`);
           popupWindow.webContents.send('popup:init', filePath);
         }
-      }, 100);
+      }, 500);
     }
   });
 
   popupWindow.on('closed', () => {
     popupWindow = null;
+    // Reset flag when editor closes
+    isOpeningEditor = false;
+    sendLog('Editor closed, reset isOpeningEditor flag');
+
+    // No changes needed - dock and window stay as they are
+    sendLog('Editor closed - main window remains in background');
   });
 }
 
@@ -1160,6 +1212,12 @@ ipcMain.on('popup:save', (_event, dataUrl) => {
 
       // Mark as saved so it won't be deleted on close
       screenshotWasSaved = true;
+
+      // Run OCR now that editing is complete (if it was skipped earlier)
+      if (existingScreenshot) {
+        sendLog(`Running OCR after editor save for ID: ${existingScreenshot.id}`);
+        runOCRInMainProcess(existingScreenshot.id, existingScreenshot.storage_path);
+      }
 
       // Close the editor popup
       if (popupWindow && !popupWindow.isDestroyed()) {
@@ -1290,11 +1348,8 @@ ipcMain.on('popup:share', (_event, dataUrl) => {
 });
 
 ipcMain.on('popup:edit', () => {
-  if (mainWindow) {
-    mainWindow.show();
-    // TODO: Send event to open editor
-    // mainWindow.webContents.send('open-editor', lastScreenshotPath);
-  }
+  // Don't show main window - user just wants to edit the screenshot
+  // The editor window will be opened automatically by the thumbnail preview
   if (popupWindow && !popupWindow.isDestroyed()) popupWindow.close();
 });
 
@@ -1307,7 +1362,7 @@ async function takeScreenshotSystem() {
     const outPath = await captureWithSystem();
     if (outPath) {
       lastScreenshotPath = outPath;
-      
+
       // Auto-copy to clipboard immediately (so user can paste right away)
       try {
         const img = nativeImage.createFromPath(outPath);
@@ -1316,13 +1371,44 @@ async function takeScreenshotSystem() {
       } catch (e) {
         sendLog(`Failed to copy to clipboard: ${e}`, 'error');
       }
-      
+
       // Show Apple-style thumbnail preview (bottom-left corner)
       createThumbnailPreview(outPath);
     }
     else sendLog('Capture canceled or failed');
   } catch (e) {
     sendLog(`takeScreenshotSystem error: ${e}`, 'error');
+    dialog.showErrorBox('Capture error', String(e));
+  } finally {
+    isCapturing = false;
+  }
+}
+
+/* ====================== Fullscreen Capture ====================== */
+async function takeFullscreenScreenshot() {
+  if (isCapturing) return;
+  isCapturing = true;
+
+  try {
+    const outPath = await captureFullscreen();
+    if (outPath) {
+      lastScreenshotPath = outPath;
+
+      // Auto-copy to clipboard immediately (so user can paste right away)
+      try {
+        const img = nativeImage.createFromPath(outPath);
+        clipboard.writeImage(img);
+        sendLog('Fullscreen screenshot auto-copied to clipboard');
+      } catch (e) {
+        sendLog(`Failed to copy to clipboard: ${e}`, 'error');
+      }
+
+      // Show Apple-style thumbnail preview (bottom-left corner)
+      createThumbnailPreview(outPath);
+    }
+    else sendLog('Fullscreen capture failed');
+  } catch (e) {
+    sendLog(`takeFullscreenScreenshot error: ${e}`, 'error');
     dialog.showErrorBox('Capture error', String(e));
   } finally {
     isCapturing = false;
@@ -1441,6 +1527,71 @@ function macCaptureDualPath() {
   });
 }
 
+// macOS: fullscreen capture (screencapture -c without -i flag)
+function captureFullscreen() {
+  return new Promise((resolve) => {
+    sendLog('macOS: starting fullscreen screencapture -c (clipboard mode)');
+    clipboard.clear();
+    const p = spawn('screencapture', ['-c'], { stdio: 'ignore' });
+
+    let processExited = false;
+    let exitCode = null;
+    let resolved = false;
+
+    const safeResolve = (value) => {
+      if (!resolved) {
+        resolved = true;
+        resolve(value);
+      }
+    };
+
+    // Timeout safety net (5s - fullscreen is instant)
+    setTimeout(() => {
+      if (!resolved) {
+        sendLog('macOS: Fullscreen capture timeout', 'error');
+        safeResolve(null);
+      }
+    }, 5000);
+
+    p.on('error', (err) => {
+      sendLog(`fullscreen screencapture spawn error: ${err}`, 'error');
+      processExited = true;
+      safeResolve(null);
+    });
+
+    p.on('exit', (code) => {
+      processExited = true;
+      exitCode = code;
+      sendLog(`fullscreen screencapture exited with code ${code}`);
+
+      if (code !== 0) {
+        sendLog('Fullscreen screenshot failed');
+        safeResolve(null);
+        return;
+      }
+
+      // Wait a moment for clipboard to be ready, then read
+      setTimeout(() => {
+        try {
+          const img = clipboard.readImage();
+          if (img && !img.isEmpty()) {
+            const buf = img.toPNG();
+            sendLog(`macOS: fullscreen clipboard image detected (bytes=${buf.length}). Saving...`);
+            const out = saveBufferToFile(buf);
+            safeResolve(out);
+          } else {
+            sendLog('macOS: Fullscreen capture - clipboard empty', 'error');
+            safeResolve(null);
+          }
+        } catch (e) {
+          sendLog(`macOS: fullscreen clipboard read error: ${e}`, 'error');
+          safeResolve(null);
+        }
+      }, 200);
+    });
+  });
+}
+
 // Windows: SnippingTool /clip → clipboard
 function winCaptureClipboard() {
   return new Promise((resolve) => {
@@ -1523,15 +1674,17 @@ function linuxCaptureFile() {
 /* ====================== Shortcuts & lifecycle ====================== */
 function registerGlobalShortcuts() {
   const ok1 = globalShortcut.register('CommandOrControl+Shift+S', () => takeScreenshotSystem());
-  const ok2 = globalShortcut.register('CommandOrControl+Shift+A', () => { 
+  const ok2 = globalShortcut.register('CommandOrControl+Shift+A', () => {
     if (!isCapturing && mainWindow) {
       if (process.platform === 'darwin') app.dock.show();
       mainWindow.show();
     }
   });
+  const ok3 = globalShortcut.register('CommandOrControl+Shift+D', () => takeFullscreenScreenshot());
 
   if (!ok1) sendLog('Failed to register screenshot shortcut', 'error');
   if (!ok2) sendLog('Failed to register show app shortcut', 'error');
+  if (!ok3) sendLog('Failed to register fullscreen screenshot shortcut', 'error');
   sendLog('Global shortcuts registered');
 }
 
@@ -1565,11 +1718,8 @@ async function checkPermissions() {
 }
 
 app.whenReady().then(async () => {
-  // Hide dock icon - make this a tray-only app like CleanShot X / Shottr
-  if (process.platform === 'darwin') {
-    app.dock.hide();
-    sendLog('Dock icon hidden - running as menu bar app');
-  }
+  // Dock will be shown when main window is ready
+  sendLog('App ready - initializing');
 
   await checkPermissions();
 
@@ -1606,6 +1756,16 @@ app.whenReady().then(async () => {
   }
 
   app.on('activate', () => {
+    sendLog(`App activate event fired, isOpeningEditor=${isOpeningEditor}`);
+
+    // Don't show main window if we're just opening the editor
+    if (isOpeningEditor) {
+      sendLog('App activated but isOpeningEditor=true, skipping main window show');
+      return;
+    }
+
+    sendLog('App activated, showing main window');
+
     // On macOS, clicking dock icon should show the window
     if (mainWindow) {
       if (process.platform === 'darwin') app.dock.show();
@@ -1789,6 +1949,15 @@ ipcMain.handle('db:query', async (_e, { table, operation, data, where, orderBy, 
 
 ipcMain.handle('file:read', async (_e, filePath, useThumbnail = true) => {
   try {
+    console.log(`[FileRead] Request for: ${filePath}, useThumbnail: ${useThumbnail}`);
+
+    // Check if original file exists
+    if (!fs.existsSync(filePath)) {
+      const error = `File does not exist: ${filePath}`;
+      console.error(`[FileRead] ${error}`);
+      return { data: null, error };
+    }
+
     let pathToRead = filePath;
 
     // Try to use thumbnail if requested
@@ -1826,7 +1995,10 @@ ipcMain.handle('file:read', async (_e, filePath, useThumbnail = true) => {
 
     return { data, error: null };
   }
-  catch (error) { return { data: null, error: error.message }; }
+  catch (error) {
+    console.error(`[FileRead] Error reading ${filePath}:`, error.message);
+    return { data: null, error: error.message };
+  }
 });
 
 ipcMain.handle('file:exists', async (_e, filePath) => {
@@ -2753,10 +2925,15 @@ async function importFileInPlace(filePath, folderId = null) {
     );
     
     sendLog(`Auto-imported file: ${fileName}`);
-    
-    // Trigger OCR
-    runOCRInMainProcess(id, filePath);
-    
+
+    // Trigger OCR - BUT skip if this file is currently open in editor
+    // (OCR will rename the file, breaking the editor)
+    if (filePath !== lastScreenshotPath || screenshotWasSaved) {
+      runOCRInMainProcess(id, filePath);
+    } else {
+      sendLog(`Skipping OCR - file is open in editor: ${filePath}`);
+    }
+
     return id;
   } catch (e) {
     sendLog(`importFileInPlace error: ${e}`, 'error');
