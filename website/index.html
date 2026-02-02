@@ -498,6 +498,123 @@
             opacity: 0.9;
         }
 
+        /* Hero Trust Badge */
+        .hero-trust-badge {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .hero-trust-badge .avatar-stack {
+            display: flex;
+            align-items: center;
+        }
+
+        .hero-trust-badge .avatar-stack img {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            border: 2px solid var(--bg-primary);
+            object-fit: cover;
+            margin-left: -8px;
+        }
+
+        .hero-trust-badge .avatar-stack img:first-child {
+            margin-left: 0;
+        }
+
+        .hero-trust-badge .trust-text {
+            font-family: var(--font-body);
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-primary);
+            opacity: 0.7;
+            line-height: 1.3;
+        }
+
+        /* Testimonials Section */
+        .testimonials-section {
+            padding: 120px 0;
+            border-bottom: 1px solid rgba(22, 20, 25, 0.1);
+            background: var(--bg-primary);
+        }
+
+        .testimonials-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 40px;
+            margin-top: 80px;
+        }
+
+        .testimonial-card {
+            background: white;
+            border: 1px solid rgba(22, 20, 25, 0.08);
+            border-radius: 12px;
+            padding: 40px 32px;
+            transition: all 0.3s var(--ease-out);
+            position: relative;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.02);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .testimonial-card:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            border-color: rgba(22, 20, 25, 0.15);
+        }
+
+        .testimonial-avatar {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            margin: 0 auto 24px;
+            border: 3px solid var(--bg-primary);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            object-fit: cover;
+        }
+
+        .testimonial-quote {
+            font-family: var(--font-italic);
+            font-style: italic;
+            font-size: 17px;
+            line-height: 1.7;
+            margin-bottom: 24px;
+            color: var(--text-primary);
+            opacity: 0.85;
+            flex: 1;
+        }
+
+        .testimonial-author {
+            text-align: center;
+        }
+
+        .testimonial-name {
+            font-family: var(--font-title);
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 4px;
+            color: var(--text-primary);
+        }
+
+        .testimonial-title {
+            font-size: 14px;
+            opacity: 0.6;
+            margin-bottom: 12px;
+            line-height: 1.4;
+            min-height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .testimonial-stars {
+            font-size: 16px;
+            color: #f59e0b;
+            letter-spacing: 2px;
+        }
+
         /* Privacy Section */
         .privacy-section {
             padding: 120px 0;
@@ -825,6 +942,33 @@
         }
 
         @media (max-width: 768px) {
+            /* Header Mobile Styles */
+            header {
+                padding: 16px 0;
+            }
+
+            nav {
+                flex-wrap: wrap;
+                gap: 16px;
+            }
+
+            .logo {
+                font-size: 18px;
+                flex: 1;
+                min-width: 0;
+            }
+
+            .logo span {
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+
+            .cta-button {
+                padding: 12px 24px;
+                font-size: 14px;
+                flex-shrink: 0;
+            }
 
             .hero-grid {
                 grid-template-columns: 1fr;
@@ -843,9 +987,24 @@
                 justify-content: center;
             }
 
+            .hero-trust-badge {
+                justify-content: center;
+                margin-bottom: 24px;
+            }
+
+            .hero-trust-badge .avatar-stack img {
+                width: 28px;
+                height: 28px;
+            }
+
+            .hero-trust-badge .trust-text {
+                font-size: 13px;
+            }
+
             .problems-grid,
             .steps-grid,
-            .stats-grid {
+            .stats-grid,
+            .testimonials-grid {
                 grid-template-columns: 1fr;
             }
 
@@ -865,6 +1024,38 @@
             .footer-content {
                 flex-direction: column;
                 gap: 40px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            /* Extra Small Mobile Styles */
+            .container {
+                padding: 0 16px;
+            }
+
+            nav {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 12px;
+            }
+
+            .logo {
+                justify-content: center;
+                font-size: 16px;
+            }
+
+            .cta-button {
+                text-align: center;
+                padding: 14px 24px;
+            }
+
+            .hero h1 {
+                font-size: 36px;
+                line-height: 1.1;
+            }
+
+            .testimonial-title {
+                min-height: 60px;
             }
         }
     </style>
@@ -893,6 +1084,16 @@
                         &<br>Instantly Searchable.<br><span class="italic">Finally.</span></h1>
                     <p class="subtitle reveal-text stagger-1">The only screenshot manager with AI-powered Search, smart
                         tagging, and local-first privacy. Never lose or waste time hunting for screenshot again!</p>
+
+                    <!-- Trust Badge above CTA -->
+                    <div class="hero-trust-badge reveal-text stagger-2">
+                        <div class="avatar-stack">
+                            <img src="https://i.pravatar.cc/150?img=12" alt="User 1">
+                            <img src="https://i.pravatar.cc/150?img=33" alt="User 2">
+                            <img src="https://i.pravatar.cc/150?img=27" alt="User 3">
+                        </div>
+                        <div class="trust-text">Used by hundreds of professionals & developers</div>
+                    </div>
 
                     <div class="hero-cta reveal-text stagger-2">
                         <a href="#" class="cta-button download-trigger">Download for macOS (Free)</a>
@@ -975,6 +1176,63 @@
                     <h3>Search & Find</h3>
                     <p>Type anything: "error message", "John's email", "blue button design". Results appear instantly
                         with AI semantic search. Click to view full-size, copy, or share.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Testimonials Section -->
+    <section class="testimonials-section">
+        <div class="container">
+            <h2 class="section-title reveal-text">Trusted by Professionals<br>Who Value Their Time</h2>
+
+            <div class="testimonials-grid">
+                <div class="testimonial-card reveal-text stagger-1">
+                    <img src="assets/sarah-chen.jpg?v=2"
+                         alt="Connor Engelsberg"
+                         class="testimonial-avatar">
+                    <p class="testimonial-quote">"ScreenVault saved me 10+ hours last month. Finding bug screenshots is now instant instead of 'where did I save that...?'"</p>
+                    <div class="testimonial-author">
+                        <div class="testimonial-name">Connor Engelsberg</div>
+                        <div class="testimonial-title">YC backed Founder</div>
+                        <div class="testimonial-stars">⭐⭐⭐⭐⭐</div>
+                    </div>
+                </div>
+
+                <div class="testimonial-card reveal-text stagger-2">
+                    <img src="https://i.pravatar.cc/150?img=33"
+                         alt="Marcus Rodriguez"
+                         class="testimonial-avatar">
+                    <p class="testimonial-quote">"Finally, a screenshot tool that respects my privacy. No cloud uploads means my client work stays confidential."</p>
+                    <div class="testimonial-author">
+                        <div class="testimonial-name">Marcus Rodriguez</div>
+                        <div class="testimonial-title">Freelance UX Designer</div>
+                        <div class="testimonial-stars">⭐⭐⭐⭐⭐</div>
+                    </div>
+                </div>
+
+                <div class="testimonial-card reveal-text stagger-3">
+                    <img src="assets/kuoloon.jpg?v=3"
+                         alt="Kuoloon"
+                         class="testimonial-avatar">
+                    <p class="testimonial-quote">"My screenshots used to be a total mess. Screenvault makes it insanely easy to sort everything with tags and folders. I basically use it every day now."</p>
+                    <div class="testimonial-author">
+                        <div class="testimonial-name">Kuoloon</div>
+                        <div class="testimonial-title">Founder</div>
+                        <div class="testimonial-stars">⭐⭐⭐⭐⭐</div>
+                    </div>
+                </div>
+
+                <div class="testimonial-card reveal-text stagger-3">
+                    <img src="assets/carlson.png"
+                         alt="Carlson"
+                         class="testimonial-avatar">
+                    <p class="testimonial-quote">"This app is a game changer, all of my screenshots organized in one place and they get named too so its easy for me to find!"</p>
+                    <div class="testimonial-author">
+                        <div class="testimonial-name">Carlson</div>
+                        <div class="testimonial-title">Founder</div>
+                        <div class="testimonial-stars">⭐⭐⭐⭐⭐</div>
+                    </div>
                 </div>
             </div>
         </div>
