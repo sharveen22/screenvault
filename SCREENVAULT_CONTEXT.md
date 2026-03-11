@@ -1,6 +1,6 @@
 # ScreenVault - Complete Context Document
 
-Last updated: March 10, 2026
+Last updated: March 11, 2026
 
 ---
 
@@ -108,14 +108,13 @@ When Cmd+Shift+W is pressed and a Chromium browser is frontmost, the app auto-de
 | `electron/scrollCapture/browserCapture.js` | CDP-based full-page capture for Chromium browsers |
 | `electron/scrollCapture/browserDetect.js` | Detects frontmost app and browser type |
 
-### Dead Code (Safe to Remove)
-| File | Why Dead |
-|------|----------|
-| `electron/scrollCapture/scrollDriver.js` | Auto-scroll driver — removed, user scrolls manually now |
-| `electron/scrollCapture/cvAlignment.js` | Old OpenCV ORB+RANSAC alignment — replaced by Row-MAD |
-| `electron/scrollCapture/cvWorker.js` | Worker thread for old OpenCV alignment |
-| `electron/scrollhelper.swift` | Swift scroll helper source — only used by scrollDriver |
-| `electron/scrollhelper` (binary) | Compiled scroll helper — orphaned |
+### Dead Code (Removed in v1.0.5)
+The following files were deleted during v1.0.5 cleanup:
+- `electron/scrollCapture/scrollDriver.js` — auto-scroll driver (replaced by manual scroll)
+- `electron/scrollCapture/cvAlignment.js` — old OpenCV ORB+RANSAC alignment (replaced by Row-MAD)
+- `electron/scrollCapture/cvWorker.js` — worker thread for old OpenCV alignment
+- `electron/scrollhelper.swift` — Swift scroll helper source
+- `electron/scrollhelper` (binary) — compiled scroll helper
 
 ### Test/Debug Files (Dev Only, Not in CI)
 | File | Purpose |
@@ -250,10 +249,10 @@ spctl -a -vv -t install "release/mac-arm64/ScreenVault.app"
 
 ## Git & GitHub Workflow
 
-### Current State (March 10, 2026)
+### Current State (March 11, 2026)
 - **Branch:** `main`
-- **Latest release pushed:** v1.0.4
-- **Unpushed changes:** All scrolling screenshot enhancements from this session
+- **Latest release pushed:** v1.0.5 (signed & notarized, on GitHub Releases)
+- **Apple Developer:** CATALYST GROWTH SG PTE. LTD. (YG5879BX5G)
 
 ### Standard PR Workflow
 ```bash
@@ -279,7 +278,23 @@ gh pr create --title "Title" --body "..."
 
 ## Version History
 
-### v1.0.4 (Latest Released — January 17, 2026)
+### v1.0.5 (Latest Released — March 11, 2026)
+- Scrolling screenshot capture with content-aware stitching (stitch engine v10)
+- Manual scroll capture (user scrolls, app captures at ~10fps)
+- Browser full-page capture via CDP (auto-detects Chromium browsers)
+- Region selector coordinate offset fix (menu bar compensation)
+- Brand-consistent overlay UI (dark gradient, Space Grotesk, black selection border)
+- "Scroll slowly for best results" tooltip above capture region
+- Screenshot sound on Done (macOS Screen Capture.aif)
+- Fixed dock icon disappearing after capture
+- Notarize script skips for local dev builds
+- Removed dead code (scrollDriver, cvAlignment, cvWorker, scrollhelper)
+- Removed scrollhelper.swift from package.json asarUnpack
+- Removed Scroll Capture button from Dashboard toolbar (use Cmd+Shift+W instead)
+- Updated website with four capture modes in "How It Works" Step 1
+- Fixed download.html: Intel download URL was serving arm64 DMG
+
+### v1.0.4 (January 17, 2026)
 - Added Cmd+Shift+D fullscreen capture to toolbar
 - Fixed import menu buttons being unclickable (z-index issue)
 
@@ -298,51 +313,13 @@ gh pr create --title "Title" --body "..."
 
 ---
 
-## Scrolling Screenshot Enhancements (March 10, 2026 — NOT YET PUSHED)
+## Website (tryscreenvault.com)
 
-### Changes Made This Session
-
-1. **Stitch engine v10 — content-aware Row-MAD** (stitchEngine.js)
-   - Complete rewrite from NCC-based approach
-   - Only uses content-bearing rows for alignment (eliminates whitespace noise)
-   - Proven correct via exhaustive brute-force testing
-
-2. **isSameFrame threshold tightened** (stitchEngine.js)
-   - Changed from 1.5 → 0.3
-   - Fixes "repeated passages" bug where genuinely different frames were marked as duplicates
-
-3. **Removed auto-scrolling, switched to manual scroll capture** (captureController.js)
-   - Removed programmatic scrolling via Swift scrollhelper (scrollDriver.js)
-   - App now captures frames rapidly (~10fps) while user scrolls manually
-   - Uses fast `captureFrame()` instead of slow `captureStableFrame()` (except first frame)
-   - Increased max frames from 150 → 300
-
-4. **Fixed region selector coordinate offset** (main.js)
-   - Selection was shifting up ~2cm due to menu bar offset
-   - Fix: convert `clientX/clientY` to screen coords using `overlayWin.getContentBounds()`
-
-5. **Brand-consistent overlay UI** (main.js)
-   - Instruction banner: Space Grotesk font, dark gradient (`#2a2730` → `#161419`)
-   - Selection border: black, no overlay tint
-   - Progress bar: matching dark gradient style, simplified messages ("Capturing" / "Compiling")
-
-6. **Screenshot sound on Done** (captureController.js)
-   - Plays macOS `Screen Capture.aif` via `afplay` when user presses Done
-
-7. **Fixed dock icon disappearing** (captureController.js, browserCapture.js)
-   - `app.dock.hide()` was called but `dock.show()` not called in all code paths
-   - Moved dock restore to `finally` block in captureController
-   - Added dock restore to both success and error paths in browserCapture
-
-8. **Notarize script local dev skip** (scripts/notarize.js)
-   - Skips notarization when `CSC_IDENTITY_AUTO_DISCOVERY=false` (local dev builds)
-
-### Files Modified (Unpushed)
-- `electron/main.js` — region selector coords fix, brand UI, progress bar, capture border
-- `electron/scrollCapture/captureController.js` — manual scroll capture, screenshot sound, dock fix
-- `electron/scrollCapture/stitchEngine.js` — v10 content-aware Row-MAD (previous session)
-- `electron/scrollCapture/browserCapture.js` — dock restore fix
-- `scripts/notarize.js` — local dev build skip
+- Hosted on Vercel, auto-deploys from `main` branch
+- `website/index.html` — main landing page
+- `website/download.html` — download page with Apple Silicon + Intel links
+- Download URLs point to GitHub Releases: `https://github.com/sharveen22/screenvault/releases/download/v1.0.5/`
+- "How It Works" Step 1 lists four capture modes (Region, Fullscreen, Scrolling, Full-Page Browser)
 
 ---
 
@@ -359,7 +336,7 @@ gh pr create --title "Title" --body "..."
 ### Build Notes
 - Always use `--dir` flag for unsigned dev builds
 - `webSecurity: false` is required for drag-and-drop file:// protocol support
-- `scrollhelper.swift` is still listed in `package.json` `asarUnpack` — should be removed when cleaning dead code
+- `electron-builder` v26: don't use `-c.afterSign=/dev/null` — it treats afterSign as a function handler. Use `CSC_IDENTITY_AUTO_DISCOVERY=false` instead to skip notarization.
 
 ### Performance
 - Gallery load (1000 screenshots): 3-5s
