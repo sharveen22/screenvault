@@ -241,99 +241,98 @@ async function stitchFrames(segments, opts = {}) {
   if (segments.length === 0) throw new Error('No segments to stitch');
   if (segments.length === 1) return nativeImage.createFromPath(segments[0].path).toPNG();
 
-  sendLog(`Loading ${segments.length} frames...`);
-  const frames = segments.map(seg => loadFrame(seg.path));
-  sendLog(`Loaded: ${frames[0].width}x${frames[0].height} each`);
+  // ─── Streaming alignment: load frames one at a time ──────────
+  sendLog(`Aligning ${segments.length} frames (streaming)...`);
+  let prevFrame = loadFrame(segments[0].path);
+  const frameW = prevFrame.width;
+  const frameH = prevFrame.height;
+  sendLog(`Frame size: ${frameW}x${frameH}`);
 
-  // Detect fixed header/footer
+  // Detect fixed header/footer using first differing frame
   let scrollTop = 0;
-  let scrollBottom = frames[0].height;
+  let scrollBottom = frameH;
 
-  for (let i = 1; i < Math.min(frames.length, 15); i++) {
+  for (let i = 1; i < Math.min(segments.length, 15); i++) {
+    const probe = loadFrame(segments[i].path);
     const testMAD = rowMAD(
-      rowToGray(frames[0].data, frames[0].width, Math.floor(frames[0].height / 2), 2),
-      rowToGray(frames[i].data, frames[i].width, Math.floor(frames[i].height / 2), 2)
+      rowToGray(prevFrame.data, frameW, Math.floor(frameH / 2), 2),
+      rowToGray(probe.data, frameW, Math.floor(frameH / 2), 2)
     );
     if (testMAD > 3) {
-      const fixed = detectFixedRows(frames[0], frames[i], sendLog);
+      const fixed = detectFixedRows(prevFrame, probe, sendLog);
       scrollTop = fixed.topFixed;
-      scrollBottom = frames[0].height - fixed.bottomFixed;
+      scrollBottom = frameH - fixed.bottomFixed;
       break;
     }
   }
   sendLog(`Scrolling region: rows ${scrollTop}–${scrollBottom} (${scrollBottom - scrollTop}px)`);
 
-  // ─── Content-aware Row-MAD alignment ──────────────────────────
-  const fixedPadding = scrollTop + (frames[0].height - scrollBottom);
-  const chain = [];
+  // ─── Stream through frames, keeping only prev + current ──────
+  const fixedPadding = scrollTop + (frameH - scrollBottom);
+  const chain = []; // { segIdx, fullOverlap, newRows }
 
-  let lastAligned = 0;
+  for (let i = 1; i < segments.length; i++) {
+    const curFrame = loadFrame(segments[i].path);
 
-  for (let i = 1; i < frames.length; i++) {
-    // Quick same-frame check using content rows only
-    if (isSameFrame(frames[lastAligned], frames[i], scrollTop, scrollBottom)) {
-      sendLog(`Frame ${i}: same as ${lastAligned}, skipping`);
+    if (isSameFrame(prevFrame, curFrame, scrollTop, scrollBottom)) {
+      sendLog(`Frame ${i}: duplicate, skipping`);
       continue;
     }
 
-    sendLog(`Aligning ${lastAligned} → ${i}...`);
+    sendLog(`Aligning ${i - 1} → ${i}...`);
 
-    const scrollAmount = findScrollOffset(
-      frames[lastAligned], frames[i],
-      scrollTop, scrollBottom,
-      sendLog
-    );
+    const scrollAmount = findScrollOffset(prevFrame, curFrame, scrollTop, scrollBottom, sendLog);
 
     if (scrollAmount < 0) {
       sendLog(`  Alignment failed — skipping frame ${i}`);
       continue;
     }
-
     if (scrollAmount < 5) {
       sendLog(`  Scroll=${scrollAmount}px < 5, skipping`);
       continue;
     }
 
-    // Compute full overlap (including fixed header/footer)
     const regionOverlap = (scrollBottom - scrollTop) - scrollAmount;
     const fullOverlap = regionOverlap + fixedPadding;
+    const newRows = frameH - fullOverlap;
 
-    const newRows = frames[i].height - fullOverlap;
     if (newRows < 3) {
       sendLog(`  Only ${newRows}px new content, skipping`);
       continue;
     }
 
-    chain.push({ frameIdx: i, fullOverlap, newRows });
-    lastAligned = i;
+    chain.push({ segIdx: i, fullOverlap, newRows });
+    prevFrame = curFrame; // release old frame, keep new as reference
     sendLog(`  Accepted: scroll=${scrollAmount}px, ${newRows}px new`);
   }
+  prevFrame = null; // release last reference frame
 
-  sendLog(`${chain.length + 1}/${frames.length} frames in final stitch`);
+  sendLog(`${chain.length + 1}/${segments.length} frames in final stitch`);
 
   if (chain.length === 0) {
     sendLog('No frames could be aligned — returning first frame');
     return nativeImage.createFromPath(segments[0].path).toPNG();
   }
 
-  // Calculate canvas height
-  const frameW = frames[0].width;
-  let totalH = frames[0].height;
+  // ─── Composite: reload only accepted frames ──────────────────
+  let totalH = frameH;
   for (const c of chain) totalH += c.newRows;
 
   sendLog(`Canvas: ${frameW}x${totalH}`);
   if (frameW * totalH > 200_000_000) throw new Error('Canvas too large (>200MP)');
 
-  // Composite
   const BLEND_PX = 24;
   const canvas = Buffer.alloc(totalH * frameW * 4, 255);
-  frames[0].data.copy(canvas, 0, 0, frames[0].height * frameW * 4);
-  let cursorY = frames[0].height;
 
-  for (const { frameIdx, fullOverlap, newRows } of chain) {
-    const frame = frames[frameIdx];
+  // Write first frame
+  const firstFrame = loadFrame(segments[0].path);
+  firstFrame.data.copy(canvas, 0, 0, frameH * frameW * 4);
+  let cursorY = frameH;
 
-    frame.data.copy(canvas, cursorY * frameW * 4, fullOverlap * frameW * 4, frame.height * frameW * 4);
+  for (const { segIdx, fullOverlap, newRows } of chain) {
+    const frame = loadFrame(segments[segIdx].path);
+
+    frame.data.copy(canvas, cursorY * frameW * 4, fullOverlap * frameW * 4, frameH * frameW * 4);
 
     const blendRows = Math.min(BLEND_PX, fullOverlap, newRows);
     if (blendRows > 2 && fullOverlap > 0) {

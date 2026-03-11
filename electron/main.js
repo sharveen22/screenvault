@@ -19,7 +19,15 @@ const fs = require('fs');
 const { spawn, spawnSync, execFile } = require('child_process');
 const os = require('os');
 const crypto = require('crypto');
-const Tesseract = require('tesseract.js');
+// Lazy-loaded: Tesseract is heavy (~100MB), only load when first OCR is needed
+let _Tesseract = null;
+function getTesseract() {
+  if (!_Tesseract) {
+    _Tesseract = require('tesseract.js');
+    sendLog('Tesseract loaded on first use');
+  }
+  return _Tesseract;
+}
 app.setAppUserModelId('com.screenvault.app.taufiq');
 
 // Global error handlers
@@ -87,14 +95,14 @@ class LRUCache {
       const firstValue = this.cache.get(firstKey);
       this.currentSize -= firstValue.size;
       this.cache.delete(firstKey);
-      console.log(`[Cache] Evicted: ${firstKey} (${(firstValue.size / 1024).toFixed(1)}KB)`);
+      // Eviction is normal hot-path behavior, no need to log
     }
 
     // Add new entry
     if (size <= this.maxSize) {
       this.cache.set(key, { data, size });
       this.currentSize += size;
-      console.log(`[Cache] Cached: ${key} (${(size / 1024).toFixed(1)}KB, total: ${(this.currentSize / 1024 / 1024).toFixed(1)}MB)`);
+      // Cache set is hot-path, skip verbose logging
     }
   }
 
@@ -913,7 +921,7 @@ async function runOCRInMainProcess(screenshotId, filePath) {
     console.log(`[OCR-Main] File exists, starting Tesseract...`);
 
     // Use simpler recognize API
-    const result = await Tesseract.recognize(filePath, 'eng', {
+    const result = await getTesseract().recognize(filePath, 'eng', {
       logger: m => {
         if (m.status === 'recognizing text' && m.progress) {
           console.log(`[OCR-Main] Progress: ${Math.round(m.progress * 100)}%`);
@@ -951,12 +959,15 @@ async function runOCRInMainProcess(screenshotId, filePath) {
     if (smartName !== originalName) {
       const dir = path.dirname(filePath);
       const newPath = path.join(dir, smartName);
-      
+
       // Check if new path already exists
       if (!fs.existsSync(newPath) || filePath === newPath) {
         try {
           fs.renameSync(filePath, newPath);
           newStoragePath = newPath;
+          // Invalidate old cache entries after rename
+          fileCache.invalidate(filePath);
+          fileCache.invalidate(getThumbnailPath(filePath));
           console.log(`[OCR-Main] Renamed: ${filePath} -> ${newPath}`);
         } catch (renameErr) {
           console.error(`[OCR-Main] Rename failed: ${renameErr}`);
@@ -970,6 +981,9 @@ async function runOCRInMainProcess(screenshotId, filePath) {
         try {
           fs.renameSync(filePath, uniquePath);
           newStoragePath = uniquePath;
+          // Invalidate old cache entries after rename
+          fileCache.invalidate(filePath);
+          fileCache.invalidate(getThumbnailPath(filePath));
           console.log(`[OCR-Main] Renamed (unique): ${filePath} -> ${uniquePath}`);
         } catch (renameErr) {
           console.error(`[OCR-Main] Rename failed: ${renameErr}`);
@@ -2388,51 +2402,43 @@ ipcMain.handle('db:query', async (_e, { table, operation, data, where, orderBy, 
 
 ipcMain.handle('file:read', async (_e, filePath, useThumbnail = true) => {
   try {
-    console.log(`[FileRead] Request for: ${filePath}, useThumbnail: ${useThumbnail}`);
-
     // Check if original file exists
     if (!fs.existsSync(filePath)) {
-      const error = `File does not exist: ${filePath}`;
-      console.error(`[FileRead] ${error}`);
-      return { data: null, error };
+      console.error(`[FileRead] File does not exist: ${filePath}`);
+      return { data: null, error: `File does not exist: ${filePath}` };
     }
 
     let pathToRead = filePath;
+    let isThumbnail = false;
 
     // Try to use thumbnail if requested
     if (useThumbnail) {
       const thumbPath = getThumbnailPath(filePath);
       if (fs.existsSync(thumbPath)) {
         pathToRead = thumbPath;
-        console.log(`[FileRead] Using thumbnail: ${path.basename(thumbPath)}`);
+        isThumbnail = true;
       } else {
         // Generate thumbnail if it doesn't exist
         const generated = generateThumbnail(filePath);
         if (generated && fs.existsSync(generated)) {
           pathToRead = generated;
-          console.log(`[FileRead] Generated thumbnail: ${path.basename(generated)}`);
-        } else {
-          console.log(`[FileRead] No thumbnail, using original: ${path.basename(filePath)}`);
+          isThumbnail = true;
         }
       }
-    } else {
-      console.log(`[FileRead] Loading FULL-RES: ${path.basename(filePath)}`);
     }
 
     // Check cache first for instant re-renders
     const cacheKey = pathToRead;
     const cachedData = fileCache.get(cacheKey);
     if (cachedData) {
-      console.log(`[FileRead] Cache HIT: ${path.basename(pathToRead)}`);
-      return { data: cachedData, error: null };
+      return { data: cachedData, isThumbnail, error: null };
     }
 
     // Cache miss - read from disk and cache it
-    console.log(`[FileRead] Cache MISS: ${path.basename(pathToRead)}`);
     const data = fs.readFileSync(pathToRead).toString('base64');
     fileCache.set(cacheKey, data);
 
-    return { data, error: null };
+    return { data, isThumbnail, error: null };
   }
   catch (error) {
     console.error(`[FileRead] Error reading ${filePath}:`, error.message);
@@ -2962,10 +2968,18 @@ ipcMain.handle('import:files', async () => {
       return { data: [], error: null };
     }
 
+    const db = getDatabase();
     const imported = [];
-    for (const filePath of result.filePaths) {
-      const id = await importSingleFile(filePath, null);
-      if (id) imported.push(id);
+    db.prepare('BEGIN').run();
+    try {
+      for (const filePath of result.filePaths) {
+        const id = await importSingleFile(filePath, null);
+        if (id) imported.push(id);
+      }
+      db.prepare('COMMIT').run();
+    } catch (txErr) {
+      db.prepare('ROLLBACK').run();
+      throw txErr;
     }
 
     sendLog(`Imported ${imported.length} files`);
@@ -3006,17 +3020,24 @@ ipcMain.handle('import:folder', async () => {
     const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'];
     const files = fs.readdirSync(sourceFolderPath);
     const imported = [];
-    
-    for (const file of files) {
-      const ext = path.extname(file).toLowerCase();
-      if (imageExtensions.includes(ext)) {
-        const sourceFilePath = path.join(sourceFolderPath, file);
-        const stat = fs.statSync(sourceFilePath);
-        if (stat.isFile()) {
-          const id = await importSingleFileToFolder(sourceFilePath, folderId, destFolderPath);
-          if (id) imported.push(id);
+
+    db.prepare('BEGIN').run();
+    try {
+      for (const file of files) {
+        const ext = path.extname(file).toLowerCase();
+        if (imageExtensions.includes(ext)) {
+          const sourceFilePath = path.join(sourceFolderPath, file);
+          const stat = fs.statSync(sourceFilePath);
+          if (stat.isFile()) {
+            const id = await importSingleFileToFolder(sourceFilePath, folderId, destFolderPath);
+            if (id) imported.push(id);
+          }
         }
       }
+      db.prepare('COMMIT').run();
+    } catch (txErr) {
+      db.prepare('ROLLBACK').run();
+      throw txErr;
     }
 
     sendLog(`Imported folder "${folderName}" with ${imported.length} images into ${destFolderPath}`);

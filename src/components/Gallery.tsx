@@ -321,25 +321,17 @@ export function Gallery({ searchQuery, activeView, onDropSuccess, captureStatus,
 
   const getImageUrl = async (storagePath: string) => {
     try {
-      console.log('[Gallery] Loading image:', storagePath);
       const result = await window.electronAPI!.file.read(storagePath);
-      console.log('[Gallery] Read result:', { hasData: !!result.data, error: result.error, dataLength: result.data?.length });
 
-      if (result.error) {
-        console.error('[Gallery] Error reading file:', result.error);
+      if (result.error || !result.data) {
+        console.error('[Gallery] Failed to load:', storagePath, result.error);
         return '';
       }
 
-      if (!result.data) {
-        console.error('[Gallery] No data returned for:', storagePath);
-        return '';
-      }
-
-      const dataUrl = `data:image/png;base64,${result.data}`;
-      console.log('[Gallery] Generated data URL, length:', dataUrl.length);
-      return dataUrl;
+      const mime = result.isThumbnail ? 'image/jpeg' : 'image/png';
+      return `data:${mime};base64,${result.data}`;
     } catch (e) {
-      console.error('[Gallery] Exception in getImageUrl:', e, 'for path:', storagePath);
+      console.error('[Gallery] Exception in getImageUrl:', e);
       return '';
     }
   };
