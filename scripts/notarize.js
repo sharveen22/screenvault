@@ -2,6 +2,11 @@ const { notarize } = require('@electron/notarize');
 require('dotenv').config();
 
 exports.default = async function notarizing(context) {
+  // Skip for local dev builds
+  if (process.env.CSC_IDENTITY_AUTO_DISCOVERY === 'false') {
+    console.log('Skipping notarization - local dev build');
+    return;
+  }
   const { electronPlatformName, appOutDir } = context;
   if (electronPlatformName !== 'darwin') return;
 

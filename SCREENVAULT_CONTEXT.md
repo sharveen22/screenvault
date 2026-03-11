@@ -1,2239 +1,368 @@
 # ScreenVault - Complete Context Document
 
-## 📱 App Overview
+Last updated: March 10, 2026
+
+---
+
+## App Overview
 
 **ScreenVault** is an Electron-based macOS screenshot management application that captures, organizes, and searches screenshots with OCR capabilities.
 
 ### Core Functionality
 - **Screenshot Capture:** Cmd+Shift+S triggers native macOS screenshot tool
-- **Apple-Style Thumbnail Preview:** Small preview appears in bottom-LEFT corner after capture
+- **Fullscreen Capture:** Cmd+Shift+D captures entire screen instantly
+- **Scrolling Screenshot:** Cmd+Shift+W captures scrollable content (manual scroll + stitch)
+- **Browser Full-Page Capture:** Auto-detects Chromium browsers and captures full page via CDP
+- **Apple-Style Thumbnail Preview:** Small preview appears in bottom-left corner after capture
 - **Auto-Save:** Screenshots auto-save after 6 seconds if not clicked
 - **Auto-Clipboard:** Screenshots automatically copied to clipboard for immediate pasting
-- **Editor Window:** Click thumbnail to open annotation editor (NO delete button - delete from main app)
+- **Editor Window:** Click thumbnail to open annotation editor
 - **OCR Processing:** Automatic text extraction using Tesseract.js with smart 3-phase tag generation
 - **Smart Filenames:** OCR-generated filenames sync to local folder
 - **Import Screenshots/Folders:** Import existing screenshots or entire folders
 - **Smart Organization:** Folders (including nested subfolders), favorites, tags, and search
 - **Sort Screenshots:** Sort by newest/oldest with dropdown
 - **Advanced Editor:** Annotate screenshots with pen, text, shapes, arrows, crop
-- **Drag-and-Drop:** Drag screenshots to external apps (WhatsApp, VS Code, etc.) and between folders
+- **Drag-and-Drop:** Drag screenshots to external apps and between folders
 - **Folder Access:** Quick access button to open local screenshots folder
 - **Local Storage:** SQLite database + file system (~/Pictures/ScreenVault/)
-- **System Integration:** Menu bar icon, global shortcuts, notifications
+- **System Integration:** Menu bar tray icon, global shortcuts, notifications
+
+### Keyboard Shortcuts
+| Shortcut | Action |
+|----------|--------|
+| Cmd+Shift+S | Interactive screenshot (native macOS tool) |
+| Cmd+Shift+D | Fullscreen screenshot |
+| Cmd+Shift+W | Scrolling screenshot |
+| Cmd+Shift+A | Show/focus ScreenVault app |
+| Cmd+R | Refresh gallery |
 
 ---
 
-## 🎯 LATEST FEATURES (January 17, 2026)
+## Scrolling Screenshot Architecture
 
-### 1. Toolbar Shortcut & Import Menu Fix (v1.0.4 - PR #56) 🎯
+### How It Works (Current — March 2026)
 
-#### Added Cmd+Shift+D to Toolbar ✅
-**Problem:** New fullscreen capture shortcut (Cmd+Shift+D) from PR #55 wasn't visible in the toolbar.
+**Two-phase pipeline:**
 
-**Solution:**
-- Added "Fullscreen Capture: Cmd+Shift+D" to keyboard shortcuts toolbar
-- Positioned between "Capture Screenshot" and "Open App" shortcuts
-- All 5 shortcuts now evenly spaced using `justify-between`
+1. **Phase 1 — Rapid Manual Capture:** User selects a region, then scrolls manually. The app captures frames rapidly (~10 fps using `captureFrame`) until user presses Done or Escape. No auto-scrolling — user controls the scroll entirely.
 
-**Toolbar Layout (5 Items):**
-1. Capture Screenshot: Cmd+Shift+S
-2. **Fullscreen Capture: Cmd+Shift+D** (NEW)
-3. Open App: Cmd+Shift+A
-4. Refresh Gallery: Cmd+R
-5. Drag to Move: Click+Drag
+2. **Phase 2 — Content-Aware Stitching:** The stitch engine (v10) aligns and composites all captured frames using Row-MAD (Mean Absolute Difference) alignment.
 
-#### Fixed Import Menu Buttons ✅
-**Problem:** Import Files and Import Folder buttons were completely unclickable.
+### Stitch Engine v10 — Content-Aware Row-MAD
 
-**Root Cause:**
-- Import dropdown menu had no z-index (defaults to 0)
-- Backdrop overlay had `z-40`
-- Backdrop was covering the menu items
-- Clicks hit the invisible backdrop instead of buttons
+**Location:** `electron/scrollCapture/stitchEngine.js`
 
-**Solution:**
-- Added `relative z-50` to dropdown menu container
-- Menu now appears above backdrop (`z-50` > `z-40`)
-- Buttons are now clickable and trigger file/folder picker dialogs
+**Key insight:** Text-heavy pages have 80%+ whitespace rows (luminance=255 everywhere). These give MAD=0 at ANY offset, creating false matches. The fix: pre-compute which rows have visual content (pixel range > 20), and only use content-bearing rows for alignment.
 
-**Enhanced Error Handling:**
-- Added try/catch blocks to import handlers
-- Added console logging for debugging
-- Helps identify future import issues
+**Algorithm:**
+1. Load frames, convert to grayscale, detect content rows (pixel range > 20)
+2. Detect fixed headers/footers (rows identical across frames)
+3. For each frame pair, check if same-frame duplicate (isSameFrame threshold: 0.3 MAD)
+4. Coarse pass: every 2nd content row, step=2 across candidate scroll offsets
+5. Fine pass: all content rows, +/-4 around best coarse result
+6. Reject if best MAD > 5
+7. Composite with 24px alpha blending at seams
 
-**Files Modified:**
-- `src/components/Dashboard.tsx`:
-  - Lines 135-161: Enhanced import handlers with error handling and logging
-  - Line 274: Added `z-50` to dropdown menu
-  - Lines 346-350: Added Cmd+Shift+D shortcut to toolbar
+**Key parameters:**
+- Content detection: row pixel range > 20
+- isSameFrame threshold: 0.3 (tightened from 1.5 to fix "repeated passages" bug)
+- Minimum overlap: 15% of scrolling region (or 60px minimum)
+- MAD rejection threshold: > 5
 
-**Testing:**
-- [x] Cmd+Shift+D visible in toolbar with proper spacing
-- [x] Import dropdown opens correctly
-- [x] Import Files button opens file picker dialog
-- [x] Import Folder button opens folder picker dialog
-- [x] Selected files/folders import successfully
+### Evolution of Stitch Approaches (What Failed → What Worked)
 
-### 2. Editor Window Improvements & Fullscreen Screenshot (v1.0.3 - PR #55) ✅ MERGED
+| Version | Approach | Result |
+|---------|----------|--------|
+| v7 | Row-MAD basic | Failed: framesIdentical threshold too loose (4.0) |
+| v8 | Removed pre-filter | Failed: green-channel-only caused false MAD=0 |
+| v9 | Full luminance | Failed: whitespace rows drown out the signal |
+| **v10** | **Content-aware Row-MAD** | **Works:** Only uses content rows for alignment |
 
-#### Issue 1: Main Window Popping Up When Opening Editor ✅ FIXED
-**Problem:** When clicking thumbnail preview to open editor, the main app window would pop up in the background.
+### Browser Full-Page Capture (CDP)
 
-**Root Cause:** Multiple factors:
-1. `popup:edit` IPC handler was calling `mainWindow.show()`
-2. App activation events weren't being prevented
-3. File watcher was running OCR during editor loading, causing file rename race conditions
+**Location:** `electron/scrollCapture/browserCapture.js`
 
-**Solution Implemented:**
-- **Removed `mainWindow.show()`** from `popup:edit` handler
-- **Added `isOpeningEditor` flag** to prevent `activate` event from showing main window
-- **Delayed OCR processing** until after editor closes to prevent file renaming during editing
-- **Main window stays in background** while editor is open (accepted behavior after research)
+When Cmd+Shift+W is pressed and a Chromium browser is frontmost, the app auto-detects it and captures the full page via Chrome DevTools Protocol (CDP):
+- Creates offscreen BrowserWindow, loads the URL
+- Forces lazy images to load, removes cookie banners/overlays
+- Captures at 2x scale for Retina quality via `Page.captureScreenshot`
+- Falls back to manual scroll capture if CDP fails
 
-**Files Modified:**
-- `electron/main.js`:
-  - Line 42: Added `isOpeningEditor` flag
-  - Lines 606-634: Modified `handleThumbnailClick()` to set flag and verify file existence
-  - Lines 1292-1305: Removed `mainWindow.show()` from `popup:edit` handler
-  - Lines 1655-1673: Modified `activate` handler to check `isOpeningEditor` flag
-  - Lines 1118-1127: Reset flag when editor closes
-  - Lines 2817-2824: Skip OCR if file is currently open in editor
-  - Lines 1208-1214: Trigger OCR after editor saves
+**Browser detection:** `electron/scrollCapture/browserDetect.js`
 
-**Technical Details:**
-- OCR was renaming files (e.g., `screenshot_2026-01-16_14-29-26.png` → `code_terminal_npm_install.png`) while editor tried to load them
-- This caused "loading..." state because file didn't exist at expected path
-- Solution: Check `lastScreenshotPath` in folder watcher's `importFileInPlace()` and skip OCR until editor closes
+### Important Discovery: Python Ground Truth is Wrong
 
-**Research Finding:**
-- macOS/Electron limitation: Cannot show a hidden window without bringing it to front
-- `showInactive()` doesn't work as expected on macOS (documented in Electron GitHub issues)
-- Accepted solution: Main window stays visible in background, user can Cmd+Tab to other apps
-
-#### Issue 2: Editor Window Stays On Top During Cmd+Tab ✅ FIXED
-**Problem:** When editor window is open and user Cmd+Tabs to other apps, editor window stays on top instead of going to background.
-
-**Root Cause:** Editor window was using `type: 'panel'` which gives special macOS behavior where panels float above other windows.
-
-**Solution:**
-- **Removed `type: 'panel'`** from editor BrowserWindow configuration
-- Editor now behaves like a normal window and properly goes to background when switching apps
-
-**Files Modified:**
-- `electron/main.js` (lines 1061-1079): Removed `type: 'panel'` from BrowserWindow options
-
-**Before:**
-```javascript
-popupWindow = new BrowserWindow({
-  // ...
-  type: 'panel', // ❌ Causes window to stay on top
-  // ...
-});
-```
-
-**After:**
-```javascript
-popupWindow = new BrowserWindow({
-  // ...
-  // ✅ Normal window behavior - respects Cmd+Tab properly
-  // ...
-});
-```
-
-**Cleanup:**
-- Removed unused `wasMainWindowVisibleBeforeEditor` flag and related tracking code
-- Simplified window management logic to only use `isOpeningEditor` flag
-
-**Testing:**
-1. Take screenshot → Click thumbnail → Editor opens, main window stays in background ✅
-2. Editor open → Cmd+Tab to other apps → Editor goes to background ✅
-3. Editor open → Click "Done" → Editor closes, main window stays where it was ✅
-4. Edited images refresh immediately in gallery after saving ✅
-
-### 3. Editor Window Improvements & Fullscreen Screenshot (v1.0.3 - PR #55) ✅ MERGED
-
-#### Editor Window Improvements ✅
-
-**1. Fixed Cmd+Tab Behavior**
-- **Problem:** Editor window wasn't appearing in Cmd+Tab switcher, staying on top when switching apps
-- **Solution:** Changed `skipTaskbar: false` in editor BrowserWindow configuration
-- **Result:** Editor now appears in macOS application switcher and properly goes to background
-
-**2. Enhanced Image Sharpness**
-- **Problem:** Images appeared blurry in the editor canvas
-- **Solution:**
-  - Added `imageSmoothingEnabled: true` and `imageSmoothingQuality: 'high'` to canvas context
-  - Optimized CSS rendering with `imageRendering: 'crisp-edges'`
-  - Removed CSS width/height 100% that was causing scaling blur
-- **Result:** Images now render crystal clear at full resolution
-
-**3. Fixed Arrow Annotation Precision**
-- **Problem:** Arrow line extended beyond triangle tip, making pointing imprecise
-- **Solution:**
-  - Line now stops at base of arrowhead (70% back from tip)
-  - Triangle tip is exactly where user clicks
-  - Added `closePath()` for cleaner triangle rendering
-- **Result:** Arrows point precisely at intended targets
-
-#### New Feature: Fullscreen Screenshot 🆕
-
-**Shortcut: Cmd+Shift+D**
-- Captures **entire screen instantly** (no selection UI)
-- Auto-copies to clipboard for immediate pasting
-- Shows Apple-style thumbnail preview in bottom-left corner
-- Same workflow as interactive screenshots:
-  - Click thumbnail to edit
-  - Auto-save after 6 seconds
-  - Full OCR processing and tagging
-- Works alongside existing Cmd+Shift+S (interactive screenshot)
-
-**Where Available:**
-1. **Global Shortcut:** Cmd+Shift+D
-2. **Tray Menu:** "Take Fullscreen Screenshot (Cmd+Shift+D)"
-
-**Files Modified (PR #55):**
-- `electron/main.js`:
-  - Line 1070: Changed `skipTaskbar: false` for editor window
-  - Lines 1387-1415: New `takeFullscreenScreenshot()` function
-  - Lines 1530-1592: New `captureFullscreen()` using `screencapture -c`
-  - Line 1682: Registered `CommandOrControl+Shift+D` global shortcut
-  - Line 326: Added tray menu item for fullscreen capture
-- `src/components/Editor.tsx`:
-  - Lines 205-207: Added high-quality image smoothing
-  - Lines 676-682: Optimized canvas CSS for sharp rendering
-  - Lines 255-277: Fixed arrow drawing to end at triangle tip
-
-**Testing:**
-- [x] Editor appears in Cmd+Tab switcher and goes to background
-- [x] Images render sharp and clear in editor
-- [x] Arrow annotations point precisely at targets
-- [x] Cmd+Shift+D captures fullscreen instantly
-- [x] Fullscreen screenshots show thumbnail preview
-- [x] Both shortcuts work independently (Cmd+Shift+S and Cmd+Shift+D)
-
-### 4. Code Signing & Notarization (v1.0.2) 🔥 PRODUCTION READY!
-**App is now fully signed and notarized by Apple for secure distribution**
-
-#### Apple Developer ID Signing ✅
-- **Certificate:** Developer ID Application: CATALYST GROWTH SG PTE. LTD. (YG5879BX5G)
-- **Hardened Runtime:** Enabled with performance-optimized entitlements
-- **Universal Binary:** Both Intel (x64) and Apple Silicon (arm64) builds
-- **No Warnings:** Users can install without "unidentified developer" alerts
-- **Verified:** Passes macOS Gatekeeper security checks
-
-#### Apple Notarization ✅
-- **Notarization Service:** Automated via `@electron/notarize`
-- **Apple ID Integration:** Credentials stored in `.env` file
-- **Build Time:** 5-15 minutes for full notarization
-- **Verification:** `spctl -a -vv` confirms "accepted, source=Notarized Developer ID"
-- **User Experience:** Seamless installation on macOS 11.0+
-
-#### Performance-Optimized Entitlements 🚀
-**Critical entitlements for maintaining performance with hardened runtime:**
-```xml
-<!-- JIT compilation for Tesseract.js WebAssembly -->
-<key>com.apple.security.cs.allow-jit</key><true/>
-
-<!-- WASM execution for OCR processing -->
-<key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/>
-
-<!-- Optimized native module loading (better-sqlite3) -->
-<key>com.apple.security.cs.allow-dyld-environment-variables</key><true/>
-
-<!-- Fast file I/O for screenshots -->
-<key>com.apple.security.files.user-selected.read-write</key><true/>
-<key>com.apple.security.files.downloads.read-write</key><true/>
-```
-
-**Why This Matters:**
-- v1.0.1 (first signed version) was **significantly slower** due to missing entitlements
-- v1.0.2 restored full performance with proper entitlements
-- OCR speed, app launch, and file operations all optimized
-
-#### Distribution Files
-- **GitHub Releases:** v1.0.2 with 4 files (DMG + ZIP for each architecture)
-- **Website Integration:** Auto-download from GitHub releases
-- **Automatic Updates:** Infrastructure ready for future auto-update system
-
-**Files Modified:**
-- `entitlements.mac.plist` - Added JIT, WASM, file access permissions
-- `scripts/notarize.js` - Notarization integration (already existed)
-- `package.json` - Version updated to 1.0.2
-- `website/download.html` - Updated download links to v1.0.2
-- `.env` (new) - Apple Developer credentials for notarization
-
-**Impact:**
-- ✅ Production-ready distribution
-- ✅ Professional, secure installation experience
-- ✅ No performance degradation from signing
-- ✅ Ready for Mac App Store submission (if desired)
-
-### 3. Folder UI Refinements (PR #50)
-**Compact, clean folder cards with consistent branding and optimized performance**
-
-#### Compact Folder Cards 📦
-- **Reduced size:** 160px → 120px (25% smaller, less cluttered)
-- **Tighter spacing:** Gap reduced from 3 to 2.5 for cleaner appearance
-- **Better proportions:** More folders visible in viewport
-- **Consistent styling:** All folders use same dark gradient (`#2a2730` → `#161419`)
-- **Brand-aligned colors:** Removed bright pastels in favor of muted tones
-
-#### Performance Improvements ⚡
-- **Removed image loading:** Eliminated ~150 lines of mosaic preview code
-- **Instant rendering:** No more waiting for folder preview images to load
-- **Lightweight function:** Replaced `loadScreenshotsAndImages()` with simple `loadCounts()`
-- **Reduced memory:** No image data stored for folder previews
-- **Faster initial load:** Folders appear immediately on app start
-
-#### Clean Scrollbar UX 🎨
-- **Fixed double scrollbar:** Removed outer scrollbar from gallery section
-- **Single scrollbar:** Only inner Virtuoso scrollbar visible for screenshot tiles
-- **Better hierarchy:** Clear separation between folders (horizontal scroll) and gallery (vertical scroll)
-- **Horizontal scrollbar:** Maintained for folders section with Tailwind styling
-
-#### What Was Removed
-- Mosaic image previews (4 images per folder card)
-- Different colored gradients per folder (was using 6 pastel variations)
-- Image loading logic and state management
-- `folderImages` state and related loading functions
-- Outer gallery container scrollbar (`overflow-y-auto` → `overflow-hidden`)
-
-#### What Was Kept
-- All drag-and-drop functionality (screenshots to folders, folder reorganization)
-- Create/rename/delete folder operations
-- Subfolder indicators and parent folder names
-- Folder navigation and active states
-- Real-time folder count updates
-
-**Before vs After:**
-- **Before:** 160px tiles with mosaic previews, varied colors, image loading delays, double scrollbars
-- **After:** 120px compact tiles, consistent dark gradient, instant rendering, single scrollbar
-
-**Files Modified in PR #50:**
-- `src/components/Dashboard.tsx` - Removed mosaic renderer, simplified folder cards, optimized scrolling
-- `SCREENVAULT_CONTEXT.md` - Updated documentation
-
-**Visual & Performance Impact:**
-- **25% smaller footprint** for each folder card
-- **Instant folder rendering** (no image loading wait)
-- **Cleaner, more minimalist** appearance aligned with brand
-- **Better UX** with single scrollbar in gallery
-
-### 4. UI Design Improvements (PR #48)
-**Major UI/UX redesign with rounded corners, left sidebar, and enhanced visual hierarchy**
-
-#### Left Sidebar Layout (220px) 🎨
-- **Moved toolbar from top to left:** Vertical sidebar with organized sections
-- **Main Actions Section:**
-  - Capture button (dark background, primary action)
-  - All Screenshots navigation (with active state)
-  - Favorites navigation (with active state)
-- **Tools Section:**
-  - Import dropdown (Files/Folder)
-  - Open Folder quick access
-- **Shortcuts Section:**
-  - Always-visible keyboard shortcuts
-  - Larger, readable font sizes (`text-sm`)
-  - Visual key representations (⌘, ⇧, etc.)
-- **Better Space Utilization:**
-  - More vertical space for screenshot gallery
-  - Cleaner, more intuitive layout
-  - Modern desktop app feel (like Finder, VS Code, Spotify)
-
-#### Rounded Corners Throughout 🔵
-- **Sidebar buttons:** `rounded-xl` with hover scale effects
-- **Folder cards:** `rounded-lg` with enhanced shadows
-- **Screenshot cards:** `rounded-lg` with smooth hover animations
-- **Modal:** `rounded-2xl` for very polished look
-- **Action buttons:** `rounded-lg` or `rounded-md` throughout
-- **Input fields:** `rounded-lg` with focus shadows
-- **Tags & badges:** `rounded-md` for subtle roundness
-- **Dropdowns/menus:** `rounded-lg` with shadows
-- **All interactive elements:** Consistent rounded styling
-
-#### Subtle Shadows & Elevation ✨
-- **Screenshot cards:** `hover:shadow-lg` + `-translate-y-1` effect
-- **Folder cards:** `shadow-lg` on active/hover states
-- **Sidebar buttons:** `hover:shadow-lg` with scale animation
-- **Modal buttons:** `shadow-md` + `hover:shadow-lg` with scale
-- **Input fields:** `focus:shadow-md` for depth on focus
-- **Consistent hierarchy:** Shadow sizes indicate interaction importance
-
-#### Enhanced Interactions 🎭
-- **Hover scale effects:** Buttons scale to `scale-105` or `scale-110` on hover
-- **Smooth transitions:** `transition-all duration-200` for fluid animations
-- **Better visual hierarchy:** Active states use shadows + scale instead of just rings
-- **Consistent spacing:** Improved gap spacing throughout (gap-1, gap-2, gap-3)
-- **Professional polish:** Every interaction feels smooth and intentional
-
-#### Design System 🎨
-- **Rounded corners:** lg (8px), xl (12px), 2xl (16px)
-- **Shadow hierarchy:** md (subtle), lg (prominent)
-- **Transition timing:** 200ms duration (feels instant but not jarring)
-- **Hover effects:** Scale + shadow + color changes
-- **Color consistency:** Same palette, better application
-- **Typography:** Improved font sizes and weights for readability
-
-**Before vs After:**
-- **Before:** Square edges, flat appearance, horizontal top toolbar, cramped layout
-- **After:** Rounded edges, layered depth, vertical left sidebar, spacious modern layout
-
-**Files Modified in PR #48:**
-- `src/components/Dashboard.tsx` (281 lines changed) - Complete layout restructure with sidebar
-- `src/components/Gallery.tsx` (19 lines changed) - Rounded cards, enhanced hover effects
-- `src/components/ScreenshotModal.tsx` (26 lines changed) - Rounded modal, polished buttons
-
-**Visual Impact:**
-- App looks **significantly more modern and polished**
-- Matches design language of leading macOS apps
-- Better visual hierarchy makes features more discoverable
-- Improved usability with always-visible shortcuts
-
-### 5. Marketing Website Separation (PR #47)
-**Complete separation of marketing landing page from Electron app**
-
-#### Dedicated Website Directory 🌐
-- **New Structure:** Created `/website` directory with all marketing pages
-- **Files Organized:**
-  - `website/index.html` - Landing page (previously `landing.html`)
-  - `website/download.html` - Download confirmation page
-  - `website/assets/` - All images and assets (camera.png, screenshots)
-  - `website/README.md` - Comprehensive deployment guide
-- **Clean Separation:** Marketing website completely independent from Electron app
-
-#### Vercel Configuration ⚙️
-- **Updated `vercel.json`:**
-  - Output directory: `website/`
-  - Clean URLs enabled (no `.html` extensions needed)
-  - Security headers: X-Content-Type-Options, X-Frame-Options, X-XSS-Protection
-  - URL rewrite: `/download` → `/download.html`
-- **Auto-Detection:** Vercel automatically reads configuration from `vercel.json`
-- **Production Ready:** Website deploys from `website/` folder automatically
-
-#### Deployment Options 🚀
-- **Vercel:** Automatic deployment via GitHub integration
-- **Netlify:** Drag-and-drop or CLI deployment
-- **GitHub Pages:** Via Actions workflow
-- **Cloudflare Pages:** Direct repository connection
-
-#### Benefits ✨
-- Clear separation between app code and website
-- Independent deployment pipelines
-- Easy to maintain and update website separately
-- No confusion between Electron app and marketing site
-- Multiple hosting options available
-
-**Files Modified in PR #47:**
-- Created `website/` directory with index.html, download.html, assets/
-- Updated `vercel.json` - Changed output directory to `website/`
-- Updated `README.md` - Added website structure documentation
-- Created `website/README.md` - Deployment instructions for all platforms
-
-### 6. UI Fixes & Real-time Updates (PR #45)
-**Real-time favorite counts, edited image refresh, and UI improvements**
-
-#### Real-time Favorite Count Updates ⭐
-- **Instant feedback:** Favorite count in sidebar updates immediately when favoriting/unfavoriting from modal
-- **Zero delay:** Bypasses debounced refresh for instant visual feedback (0ms vs 300ms)
-- **Implementation:** Callback chain from ScreenshotModal → Gallery → Dashboard
-- **Technical Details:**
-  - `Dashboard.tsx`: Added `updateFavCount` callback that immediately updates state
-  - `Gallery.tsx`: Pass `onFavoriteToggle` prop to modal and handle in `toggleFavorite`
-  - `ScreenshotModal.tsx`: Call `onFavoriteToggle(+1 or -1)` on favorite status change
-
-#### Edited Image Refresh Fix 🖼️
-- **Problem:** Edited screenshots weren't appearing in gallery tiles after saving from editor
-- **Root cause:** Cache and thumbnails weren't being invalidated/regenerated after editing
-- **Solution:**
-  - Invalidate LRU file cache for both original file and thumbnail
-  - Delete old thumbnail file from disk
-  - Regenerate new thumbnail from edited image
-- **Result:** Gallery tiles show edited images immediately without manual refresh
-- **Technical Details:**
-  - `electron/main.js` in `popup:save` handler:
-    ```javascript
-    fileCache.invalidate(existingScreenshot.storage_path);
-    fileCache.invalidate(thumbPath);
-    if (fs.existsSync(thumbPath)) fs.unlinkSync(thumbPath);
-    generateThumbnail(existingScreenshot.storage_path);
-    ```
-
-#### UI Improvements 🎨
-- **Window Title:** Simplified from "ScreenVault: Screenshot Management Platform" to just "ScreenVault"
-  - `index.html`: Updated `<title>` tag
-- **Search Bar Relocation:** Moved from top toolbar to screenshots section
-  - Better contextual placement - search is now directly above the content it filters
-  - Top toolbar cleaner and focused on global actions only
-  - Improved placeholder text: "Search screenshots..." (was "Search...")
-  - `Dashboard.tsx`: Moved search input from top bar to main content section
-
-**Files Modified in PR #45:**
-- `src/components/Dashboard.tsx` - Added `updateFavCount`, relocated search bar
-- `src/components/Gallery.tsx` - Added `onFavoriteToggle` prop
-- `src/components/ScreenshotModal.tsx` - Call `onFavoriteToggle` on favorite change
-- `electron/main.js` - Cache invalidation + thumbnail regeneration after editing
-- `index.html` - Simplified title tag
-- `SCREENVAULT_CONTEXT.md` - Updated documentation
-
-### 7. Performance Optimizations Phase 3 (PR #44) ⚡⚡⚡
-**LRU Cache + Smart OCR + Full-Resolution Viewing**
-
-#### LRU File Cache (Optimization #11)
-- **10-20x faster folder switching** with intelligent caching
-- **50MB in-memory cache** for file reads with automatic eviction
-- **Instant re-renders** when switching back to viewed folders (<100ms vs 1-2s)
-- **Cache hits: <100ms** vs disk reads
-- **Smart cache invalidation:**
-  - Automatic invalidation on file delete/rename
-  - File watcher integration (change/unlink events)
-  - Manual clear via `cache:clear` IPC handler
-- **Debug support:** `cache:stats` IPC handler shows entries, size, memory usage
-- **LRU eviction:** Oldest entries automatically removed when limit reached
-- Results:
-  - Switching between 2-3 frequently viewed folders: **Instant**
-  - Cache can hold ~1,250-2,500 thumbnails (20-40KB each)
-  - Memory usage capped at 50MB regardless of gallery size
-
-#### Smart OCR Tag Generation
-**Completely rewritten 3-phase algorithm for accurate categorization:**
-
-**Phase 1: Category Detection (PRIORITY)**
-- Pattern-based tags (code, terminal, api, web, github, etc.)
-- Always appear first in tag list
-- 25+ category patterns with expanded keywords:
-  - Code: `function`, `const`, `=>`, `interface`, `type`, `async`
-  - Terminal: `console`, `bash`, `npm`, `git`, `sudo`
-  - Web: `http`, `localhost`, `127.0.0.1`
-  - Auth: `login`, `oauth`, `authentication`
-
-**Phase 2: Smart Keyword Extraction (SECONDARY)**
-- Frequency-based scoring (prefers words appearing 1-5 times)
-- Expanded noise word filtering (100+ common words removed)
-- Minimum word length: 4 characters (no "the", "for", "and")
-- Top 3 keywords selected based on frequency
-- Only added if not already in categories
-
-**Phase 3: Capitalized Words (FALLBACK)**
-- Extracts app/product names (Chrome, Figma, GitHub)
-- Only used if no categories or keywords found
-- Identifies proper nouns for better context
-
-**Results:**
-- Tag limit increased from 5 to **8 tags**
-- Category tags prioritized over generic keywords
-- Enhanced logging with text samples and tag counts
-- Much more accurate and relevant tags
-
-#### Full-Resolution Image Viewing
-**Crystal clear images in modals and editor:**
-
-**Before Phase 3:**
-- Modals loaded 300px JPEG thumbnails (blurry)
-- Editor loaded 300px JPEG thumbnails (blurry)
-- Small image display in both views
-
-**After Phase 3:**
-- **Screenshot Modal:** Full-resolution images (crisp and clear)
-  - Modal width: `max-w-6xl` → `max-w-[95vw]` (95% of screen)
-  - Image fills available space
-  - Sidebar still shows metadata/tags
-- **Editor Window:** Full-resolution images (sharp for annotation)
-  - Canvas fills entire window
-  - Reduced padding (p-8 → p-4)
-  - Better use of screen real estate
-- **Gallery Tiles:** Still use thumbnails for fast loading
-
-**Implementation:**
-- Added `useThumbnail` parameter to `file.read()` API
-- Default: `true` (use thumbnails for gallery)
-- Modal/Editor: `false` (use full-resolution)
-- Updated preload.js and components
-
-**Phase 3 Overall Impact:**
-- Folder switching: **Instant with cache** (vs 1-2s every time)
-- Modal viewing: **Crystal clear images** (vs blurry thumbnails)
-- Editor annotations: **Full-resolution editing** (vs low-quality)
-- OCR tags: **6-8 relevant tags** (vs 1-2 generic)
-- Memory: **Controlled at 50MB** (cache limit)
-
-### 8. Performance Optimizations Phase 2 (PR #42, #43) ⚡⚡
-**MASSIVE performance boost - Gallery now 10-20x faster with 100x less memory**
-
-#### Debounce & State Updates (PR #42)
-- **40% reduction in redundant database queries** across the app
-- **Dashboard Load Debouncing:** 150ms debounce prevents overlapping folder preview loads
-- **Gallery Search Debouncing:** 100ms debounce batches rapid searches
-- **Refresh Batching:** 300ms debounce coalesces multiple IPC events into single refresh
-- **Request Deduplication:** `loadingRef` flags prevent race conditions from overlapping async queries
-- **Proper Cleanup:** All debounce timers cleaned up on unmount to prevent memory leaks
-- Results: Smoother UI, less database blocking, better event batching
-
-#### Virtual Scrolling (PR #42)
-- **10x faster gallery rendering** with 1000+ screenshots
-- **25x fewer DOM nodes** - only renders visible rows (600 nodes vs 15,000)
-- **75% memory reduction** - 120MB vs 500MB for 1000 screenshots
-- **Butter smooth scrolling** - works flawlessly even with 5000+ screenshots
-- **Responsive grid** - Adapts from 2-6 columns based on window width
-- **Row-based virtualization** - Uses react-virtuoso with `overscan={2}` for smooth scrolling
-- **Removed IntersectionObserver** - Virtualization handles visibility automatically
-- Results:
-  - Initial render: 5-8s → 0.5-0.8s (6-10x faster)
-  - Scroll performance: Laggy at 500+ → Smooth at 5000+
-  - Time to interactive: 3-5s → <0.5s (8-10x faster)
-
-#### Image Thumbnails (PR #43) 🔥 BIGGEST WIN
-- **10-20x faster gallery loading** - Most impactful optimization yet!
-- **100x less data transfer** - 3MB vs 300MB for 100 screenshots
-- **20x memory reduction** - 15MB vs 300MB for 100 screenshots
-- **50-100x smaller images** - 20-50KB JPEG thumbnails vs 2-5MB PNG originals
-- **Automatic generation:**
-  - 300px width JPEG thumbnails at 80% quality
-  - Perfect for gallery tiles (retina-ready with 1.5x resolution)
-  - Generated in background via `setTimeout(0)` (non-blocking)
-  - Cached in `~/Pictures/ScreenVault/.thumbnails/` folder
-  - Auto-generated on screenshot capture, import, and on-demand for existing files
-- **Smart IPC Handler:**
-  - `file:read` serves thumbnails by default for gallery
-  - Falls back to on-demand generation if thumbnail missing
-  - Full-size images loaded for editor/modal with `useThumbnail: false`
-- **Backward Compatible:**
-  - Works with existing screenshots (generates on first load)
-  - Zero frontend code changes needed
-  - Transparent optimization
-- Results:
-  - Gallery load time: 8-12s → 0.5-1s (10-20x faster)
-  - First tile visible: 2-3s → <100ms (20-30x faster)
-  - Network/IPC transfer: 200-500MB → 2-5MB (100x less data)
-  - Folder revisits: Instant (<100ms) with cache vs 8-12s every time
-
-**Phase 2 Overall Impact:**
-- Gallery opens **instantly** even with 1000+ screenshots
-- Scrolling is **butter smooth** at 5000+ screenshots
-- Memory usage **20x lower** (15MB vs 300MB for 100 screenshots)
-- Database queries **40% fewer** through smart debouncing
-- **Ready for production** - handles power users with massive libraries!
-
-### 9. Performance Optimizations Phase 1 (PR #40, #41) ⚡
-**Foundational performance improvements - 5-10x faster overall**
-
-#### Database Indexes (PR #40)
-- **10x faster database queries** for favorites, folders, and sorting
-- Added 5 strategic indexes: `is_favorite`, `is_archived`, `storage_path`, `folder_id+is_favorite`, `folder_id+created_at`
-- Migration system automatically applies indexes to existing databases
-- Load Favorites: 100-200ms → 10-20ms
-- Load Folders: 80-150ms → 8-15ms
-- Duplicate detection: 50-100ms → 5-10ms
-
-#### Batch File Checks (PR #41)
-- **10-40x faster file existence verification**
-- Single batched IPC call replaces 100+ individual calls
-- 100 screenshots: 200-400ms → 10-20ms (10-20x faster)
-- 500 screenshots: 1-2s → 30-50ms (20-40x faster)
-- 1000 screenshots: 2-4s → 50-100ms (20-80x faster)
-
-#### React Optimizations (PR #41)
-- **40-60% fewer re-renders** during UI interactions
-- Memoized folder computations with `useMemo` and `useCallback`
-- Smoother typing in search box (no lag)
-- Faster folder switching and view changes
-- 50-70% fewer unnecessary operations
-
-### 10. UI Enhancements & Bug Fixes (PR #38)
-- **Screenshot Tile Display:** Changed from object-cover to object-contain so users can see entire screenshot without cropping
-- **Folder Section Redesign:**
-  - Single-row horizontal scroll layout (was 2-row grid)
-  - Reduced card size from 150px to 130px
-  - Increased gaps from 3px to 16px for better aesthetics
-  - Reduced vertical space from 340px to ~180px
-- **Subfolder Display:** Parent folder names now shown above subfolder names with blue arrow indicator
-- **Keyboard Shortcuts Dropdown:** Added keyboard icon button in toolbar showing:
-  - Take Screenshot (Cmd+Shift+S)
-  - Open App (Cmd+Shift+A)
-  - Refresh Gallery (Cmd+R)
-  - Drag to Move (Click+Drag)
-- **Modal Improvements:**
-  - Click outside screenshot modal to close
-  - Press Escape key to close modal
-- **Real-time Favorites Count:** Fixed bug where favorites count wasn't updating in real-time
-
-### 11. Drag-and-Drop to External Apps (PR #39)
-- **External App Support:** Drag screenshots from ScreenVault directly to external applications
-  - Works with WhatsApp, VS Code, Slack, and any app that accepts image files
-  - Uses Electron's File API to create actual file objects during drag operations
-  - Maintains internal drag-and-drop for moving screenshots between folders
-- **Native File Drag:** Implemented proper file:// protocol support with IPC handlers
-- **Drag Preview:** Blue box with camera emoji shown during drag operations
-
-### 12. Quick Folder Access (PR #39)
-- **Toolbar Button:** Added folder icon button in toolbar (between keyboard shortcuts and CAPTURE)
-- **One-Click Access:** Opens ~/Pictures/ScreenVault folder in Finder instantly
-- **IPC Handler:** Added file:open-screenshots-folder handler in main process
-
-### 13. Fixed Duplicate Screenshots & Editor Save (PR #32)
-- **No More Duplicates:** Added duplicate check in saveScreenshotToDatabase() to prevent double-saving
-- **Editor Save Fixed:** When saving from editor, updates existing screenshot instead of creating duplicate
-- **Handles OCR Renames:** Editor properly finds and updates screenshots even after OCR renames them
-- **File Existence Check:** Gallery filters out screenshots whose files don't exist on disk
-- **Removed Delete Button:** Simplified editor by removing delete functionality (users delete from main app)
-- **Real-time Sync:** Gallery always shows only files that actually exist in the folder
+`test-stitch.py` uses only 4 sample rows at [0.2, 0.4, 0.6, 0.8] of overlap on the full frame. Exhaustive testing (`test-deep.js`) proved it gives incorrect scroll values. The engine v10's offsets are the correct ones.
 
 ---
 
-## 🚀 BUILD, SIGN & LAUNCH COMMANDS
+## Capture Pipeline Files
 
-### Quick Build & Test (Unsigned - For Development)
-**This is the fastest way to build and test your changes:**
-```bash
-pkill -f "ScreenVault" 2>/dev/null; sleep 1; npm run build && npx electron-builder --mac --dir -c.mac.identity=null && open release/mac-arm64/ScreenVault.app
-```
+### Active Files
+| File | Purpose |
+|------|---------|
+| `electron/scrollCapture/captureController.js` | Orchestrates capture loop (rapid manual capture + stitch) |
+| `electron/scrollCapture/stitchEngine.js` | Content-aware Row-MAD alignment & compositing (v10) |
+| `electron/scrollCapture/frameCollector.js` | Screen capture via macOS `screencapture -R` command |
+| `electron/scrollCapture/browserCapture.js` | CDP-based full-page capture for Chromium browsers |
+| `electron/scrollCapture/browserDetect.js` | Detects frontmost app and browser type |
 
-### Development Mode (with hot reload)
-```bash
-npm run dev
-```
+### Dead Code (Safe to Remove)
+| File | Why Dead |
+|------|----------|
+| `electron/scrollCapture/scrollDriver.js` | Auto-scroll driver — removed, user scrolls manually now |
+| `electron/scrollCapture/cvAlignment.js` | Old OpenCV ORB+RANSAC alignment — replaced by Row-MAD |
+| `electron/scrollCapture/cvWorker.js` | Worker thread for old OpenCV alignment |
+| `electron/scrollhelper.swift` | Swift scroll helper source — only used by scrollDriver |
+| `electron/scrollhelper` (binary) | Compiled scroll helper — orphaned |
 
-### Production Build (Signed & Notarized - For Distribution)
-**CRITICAL: This requires Apple Developer credentials in `.env` file**
+### Test/Debug Files (Dev Only, Not in CI)
+| File | Purpose |
+|------|---------|
+| `test-stitch-verify.js` | Compares engine vs brute-force ground truth (pure Node, pngjs) |
+| `test-deep.js` | Exhaustive all-row brute force on specific pairs |
+| `test-debug.js` | Content analysis showing whitespace dominance |
+| `test-stitch-node.js` | Node stitch test (requires Electron, doesn't run standalone) |
+| `test-stitch.js` | Basic stitch test |
+| `test-stitch.py` | Python ground truth — WRONG, don't trust results |
 
-#### Prerequisites
-1. **Create `.env` file** in project root:
-```bash
-# Apple Developer Credentials for Notarization
-APPLE_ID=sharveenkumar@gmail.com
-APPLE_APP_SPECIFIC_PASSWORD=your-app-specific-password
-APPLE_TEAM_ID=YG5879BX5G
-```
-
-2. **Generate App-Specific Password:**
-   - Go to https://appleid.apple.com
-   - Sign in with your Apple ID
-   - Navigate to Security → App-Specific Passwords
-   - Click "Generate Password"
-   - Name it "ScreenVault Notarization"
-   - Copy the password and add to `.env`
-
-#### Build Commands
-
-**Build Signed & Notarized Universal Binary (Intel + Apple Silicon):**
-```bash
-# Clean previous build
-rm -rf release/
-
-# Build production app with signing and notarization
-npm run build && npx electron-builder --mac --x64 --arm64
-```
-
-**What This Does:**
-1. Builds Vite frontend (React app)
-2. Compiles for both Intel (x64) and Apple Silicon (arm64)
-3. Signs with Developer ID certificate
-4. Notarizes with Apple (5-15 minutes)
-5. Creates DMG and ZIP files for both architectures
-
-#### Build Output
-```
-release/
-├── ScreenVault-1.0.2.dmg              # Intel DMG (131 MB)
-├── ScreenVault-1.0.2-arm64.dmg        # Apple Silicon DMG (125 MB)
-├── ScreenVault-1.0.2-mac.zip          # Intel ZIP (127 MB)
-├── ScreenVault-1.0.2-arm64-mac.zip    # Apple Silicon ZIP (120 MB)
-├── mac/ScreenVault.app                # Intel app bundle
-└── mac-arm64/ScreenVault.app          # Apple Silicon app bundle
-```
-
-#### Verify Signing & Notarization
-```bash
-# Check code signature
-codesign -dv --verbose=4 "release/mac-arm64/ScreenVault.app"
-# Should show: Authority=Developer ID Application: CATALYST GROWTH SG PTE. LTD.
-
-# Check entitlements
-codesign -d --entitlements :- "release/mac-arm64/ScreenVault.app"
-# Should show JIT, WASM, and file access entitlements
-
-# Verify notarization (Gatekeeper check)
-spctl -a -vv -t install "release/mac-arm64/ScreenVault.app"
-# Should show: accepted, source=Notarized Developer ID
-```
-
-### Troubleshooting Builds
-
-#### Issue: Notarization Failed
-```bash
-# Check notarization logs
-xcrun notarytool log <submission-id> --apple-id sharveenkumar@gmail.com --team-id YG5879BX5G
-
-# Common fixes:
-# 1. Verify credentials in .env are correct
-# 2. Check entitlements.mac.plist has required permissions
-# 3. Ensure Developer ID certificate is installed
-security find-identity -v -p codesigning
-```
-
-#### Issue: App is Slow After Signing
-**This means entitlements are missing!** Check [entitlements.mac.plist](entitlements.mac.plist:1-38):
-```xml
-<!-- Required for performance -->
-<key>com.apple.security.cs.allow-jit</key><true/>
-<key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/>
-<key>com.apple.security.cs.allow-dyld-environment-variables</key><true/>
-```
-
-#### Issue: Build Cache Problems
-```bash
-# Nuclear option - clean everything
-rm -rf release dist node_modules ~/Library/Caches/electron-builder
-npm install
-npm run build
-npx electron-builder --mac --x64 --arm64
-```
-
-### App Version Management
-
-**Update version for new releases:**
-1. Edit `package.json`: `"version": "1.0.2"` → `"version": "1.0.3"`
-2. Rebuild: `npm run build && npx electron-builder --mac --x64 --arm64`
-3. Files will now be named: `ScreenVault-1.0.3.dmg`, etc.
+Test files read debug frames from `~/Library/Application Support/screenvault/scroll-debug/`.
 
 ---
 
-## 🔀 GIT & GITHUB WORKFLOW
-
-### Check Current Status
-```bash
-git status                    # See modified files
-git log --oneline -10        # Recent commits
-git branch -a                 # List all branches
-gh pr list                    # List open PRs
-git log origin/main..HEAD --oneline  # Commits ahead of main
-```
-
-### Create New Branch & PR (Standard Workflow)
-```bash
-# 1. Start from latest main
-git checkout main
-git pull origin main
-
-# 2. Create new feature branch
-git checkout -b feature/your-feature-name
-
-# 3. Make your changes, then stage them
-git add electron/main.js src/components/Gallery.tsx
-# OR add all changes
-git add -A
-
-# 4. Commit with detailed message
-git commit -m "$(cat <<'EOF'
-feat: Your feature title
-
-Detailed description of what this PR does and why.
-
-## Changes
-- Change 1 description
-- Change 2 description
-- Change 3 description
-
-## Technical Details
-- electron/main.js: What changed and why
-- src/components/Gallery.tsx: What changed and why
-
-## Testing
-- Tested scenario 1
-- Tested scenario 2
-
-Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>
-EOF
-)"
-
-# 5. Push branch to GitHub
-git push -u origin feature/your-feature-name
-
-# 6. Create Pull Request with gh CLI
-gh pr create --title "Your PR Title" --body "$(cat <<'EOF'
-## Summary
-Brief description of what this PR accomplishes.
-
-## Changes
-- Change 1
-- Change 2
-- Change 3
-
-## Performance Impact (if applicable)
-- Metric 1: Before → After
-- Metric 2: Before → After
-
-## Testing
-- [x] Tested feature A
-- [x] Tested feature B
-- [x] Tested edge case C
-
-## Screenshots (if applicable)
-[Add screenshots here]
-
----
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
-EOF
-)" --base main
-```
-
-### Alternative: Create Branch from Current Branch
-**Use this when you're already on a feature branch with uncommitted changes:**
-```bash
-# 1. Create new branch from current branch (don't switch to main)
-git checkout -b feature/new-feature-name
-
-# 2. Stage and commit changes
-git add -A
-git commit -m "feat: Your feature description
-
-## Changes
-- Change details
-
-Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>"
-
-# 3. Push and create PR
-git push -u origin feature/new-feature-name
-gh pr create --title "PR Title" --body "Description
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)" --base main
-```
-
-### View & Manage PRs
-```bash
-gh pr list                  # List all open PRs
-gh pr view 44              # View specific PR details
-gh pr checkout 44          # Checkout PR locally for testing
-gh pr merge 44             # Merge PR (if approved)
-```
-
-### Useful Git Commands
-```bash
-# See what changed in specific files
-git diff src/components/Gallery.tsx
-
-# View commit history with changes
-git log -p --oneline -5
-
-# Undo last commit (keep changes)
-git reset --soft HEAD~1
-
-# Discard local changes
-git checkout -- filename.tsx
-
-# Update branch with latest main
-git checkout feature/your-branch
-git rebase main
-# OR merge main into branch
-git merge main
-```
-
----
-
-## 📦 GITHUB RELEASES & WEBSITE DEPLOYMENT
-
-### Creating a GitHub Release with Signed Files
-
-**After building signed & notarized app:**
-
-```bash
-# 1. Verify files exist
-ls -lh release/*.dmg release/*.zip | grep -v blockmap
-
-# 2. Create GitHub release
-gh release create v1.0.2 \
-  release/ScreenVault-1.0.2.dmg \
-  release/ScreenVault-1.0.2-arm64.dmg \
-  release/ScreenVault-1.0.2-mac.zip \
-  release/ScreenVault-1.0.2-arm64-mac.zip \
-  --title "ScreenVault v1.0.2 - Release Title" \
-  --notes "$(cat <<'EOF'
-# ScreenVault v1.0.2 - Release Title
-
-## What's New
-✅ Feature 1 description
-✅ Feature 2 description
-✅ Feature 3 description
-
-## Download Options
-
-### For Apple Silicon Macs (M1/M2/M3) - Recommended
-- **DMG:** `ScreenVault-1.0.2-arm64.dmg` (125 MB)
-- **ZIP:** `ScreenVault-1.0.2-arm64-mac.zip` (120 MB)
-
-### For Intel Macs
-- **DMG:** `ScreenVault-1.0.2.dmg` (131 MB)
-- **ZIP:** `ScreenVault-1.0.2-mac.zip` (127 MB)
-
-## Installation
-1. Download the appropriate DMG file for your Mac
-2. Open the DMG file
-3. Drag ScreenVault.app to your Applications folder
-4. Launch ScreenVault from Applications
-5. Grant necessary permissions when prompted
-
-## Security
-✅ **Code Signed** with Developer ID Application
-✅ **Notarized** by Apple
-✅ No "unidentified developer" warnings
-
-## System Requirements
-- macOS 11.0 or later
-- Apple Silicon (M1/M2/M3) or Intel processor
-- 100 MB free disk space
-
----
-
-**Full changelog:** https://github.com/sharveen22/screenvault/compare/v1.0.1...v1.0.2
-EOF
-)"
-
-# 3. Verify release created
-gh release view v1.0.2
-
-# 4. View all release files
-gh release view v1.0.2 --json assets --jq '.assets[].name'
-```
-
-### Updating an Existing Release
-
-```bash
-# Upload new files (overwrites existing)
-gh release upload v1.0.2 release/ScreenVault-1.0.2-arm64.dmg --clobber
-
-# Delete old files from release
-gh release delete-asset v1.0.2 "ScreenVault-1.0.0-arm64.dmg" --yes
-
-# Edit release notes
-gh release edit v1.0.2 --notes "Updated release notes here"
-```
-
-### Website Download Link Updates
-
-**After creating GitHub release, update website download links:**
-
-1. **Edit `website/download.html`:**
-```html
-<!-- Line 157: Manual download button -->
-<a href="https://github.com/sharveen22/screenvault/releases/download/v1.0.2/ScreenVault-1.0.2-arm64.dmg"
-   class="manual-download" download>
-   Click here if download doesn't start
-</a>
-
-<!-- Lines 171-173: Auto-download JavaScript -->
-const downloadUrl = isAppleSilicon
-    ? 'https://github.com/sharveen22/screenvault/releases/download/v1.0.2/ScreenVault-1.0.2-arm64.dmg'
-    : 'https://github.com/sharveen22/screenvault/releases/download/v1.0.2/ScreenVault-1.0.2-arm64.dmg';
-```
-
-2. **Commit and push changes:**
-```bash
-git add website/download.html
-git commit -m "chore: Update download links to v1.0.2"
-git push origin main
-```
-
-3. **Deploy to Vercel:**
-```bash
-# If on feature branch, merge to main first
-git checkout main
-git merge feature/your-branch
-git push origin main
-
-# Vercel auto-deploys from main branch
-# Check deployment at: https://vercel.com/your-project
-```
-
-### Complete Release Workflow (Copy & Paste Ready!)
-
-**Full end-to-end process for releasing a new version:**
-
-```bash
-# ============================================
-# STEP 1: UPDATE VERSION
-# ============================================
-# Edit package.json manually:
-# Change "version": "1.0.2" to "version": "1.0.3"
-
-# ============================================
-# STEP 2: BUILD SIGNED & NOTARIZED APP
-# ============================================
-# Clean previous builds
-rm -rf release/
-
-# Build for both architectures with signing and notarization
-# This will take 5-15 minutes due to Apple notarization
-npm run build && npx electron-builder --mac --x64 --arm64
-
-# ============================================
-# STEP 3: VERIFY SIGNING & NOTARIZATION
-# ============================================
-# Check code signature
-codesign -dv --verbose=4 "release/mac-arm64/ScreenVault.app"
-# Should show: Authority=Developer ID Application: CATALYST GROWTH SG PTE. LTD.
-
-# Verify notarization (Gatekeeper check)
-spctl -a -vv -t install "release/mac-arm64/ScreenVault.app"
-# Should show: accepted, source=Notarized Developer ID
-
-# ============================================
-# STEP 4: TEST THE BUILT APP
-# ============================================
-open release/mac-arm64/ScreenVault.app
-# Test all features:
-# - Screenshot capture (Cmd+Shift+S)
-# - Thumbnail preview click → Editor opens
-# - Editor window behavior (Cmd+Tab works correctly)
-# - Main window stays in background
-# - Save edited screenshots
-# - OCR processing
-# - Folder management
-
-# ============================================
-# STEP 5: CREATE GITHUB RELEASE
-# ============================================
-# Verify all 4 files exist
-ls -lh release/*.dmg release/*.zip | grep -v blockmap
-
-# Create GitHub release with all files
-gh release create v1.0.3 \
-  release/ScreenVault-1.0.3.dmg \
-  release/ScreenVault-1.0.3-arm64.dmg \
-  release/ScreenVault-1.0.3-mac.zip \
-  release/ScreenVault-1.0.3-arm64-mac.zip \
-  --title "ScreenVault v1.0.3 - Editor Window Behavior Fixes" \
-  --notes "$(cat <<'EOF'
-# ScreenVault v1.0.3 - Editor Window Behavior Fixes
-
-## What's New
-✅ Fixed main window popping up when opening editor - now stays in background
-✅ Fixed editor window staying on top during Cmd+Tab - now properly goes to background
-✅ Fixed OCR file rename race condition causing editor loading issues
-✅ Cleaned up window management code for better maintainability
-
-## Technical Improvements
-- Removed `type: 'panel'` from editor window for normal window behavior
-- Added `isOpeningEditor` flag to prevent unwanted window activation
-- Delayed OCR processing until after editor closes
-- Removed unused window visibility tracking code
-
-## Download Options
-
-### For Apple Silicon Macs (M1/M2/M3) - Recommended
-- **DMG:** `ScreenVault-1.0.3-arm64.dmg` (~125 MB)
-- **ZIP:** `ScreenVault-1.0.3-arm64-mac.zip` (~120 MB)
-
-### For Intel Macs
-- **DMG:** `ScreenVault-1.0.3.dmg` (~131 MB)
-- **ZIP:** `ScreenVault-1.0.3-mac.zip` (~127 MB)
-
-## Installation
-1. Download the appropriate DMG file for your Mac
-2. Open the DMG file
-3. Drag ScreenVault.app to your Applications folder
-4. Launch ScreenVault from Applications
-5. Grant necessary permissions when prompted
-
-## Security
-✅ **Code Signed** with Developer ID Application
-✅ **Notarized** by Apple
-✅ No "unidentified developer" warnings
-
-## System Requirements
-- macOS 11.0 or later
-- Apple Silicon (M1/M2/M3) or Intel processor
-- 100 MB free disk space
-
----
-
-**Full changelog:** https://github.com/sharveen22/screenvault/compare/v1.0.2...v1.0.3
-EOF
-)"
-
-# Verify release was created
-gh release view v1.0.3
-
-# View all release files
-gh release view v1.0.3 --json assets --jq '.assets[].name'
-
-# ============================================
-# STEP 6: UPDATE WEBSITE DOWNLOAD LINKS
-# ============================================
-# Edit website/download.html
-# Update line 157 (manual download button):
-# Change v1.0.2 to v1.0.3 in the href URL
-
-# Update lines 171-173 (auto-download JavaScript):
-# Change both v1.0.2 to v1.0.3 in downloadUrl
-
-# ============================================
-# STEP 7: COMMIT & PUSH CHANGES
-# ============================================
-git add package.json website/download.html
-git commit -m "chore: Release v1.0.3
-
-## Changes
-- Updated version to v1.0.3
-- Updated website download links to point to v1.0.3
-
-Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>"
-
-git push origin main
-
-# ============================================
-# STEP 8: VERIFY DEPLOYMENT
-# ============================================
-# Wait 2-3 minutes for Vercel automatic deployment
-# Check deployment status at: https://vercel.com/your-project
-
-# Test download from live website
-# Visit your website and click download button
-# Verify it downloads v1.0.3 files from GitHub
-
-# ============================================
-# STEP 9: ANNOUNCE RELEASE (Optional)
-# ============================================
-# Share release on:
-# - Twitter/X
-# - Product Hunt (if launching publicly)
-# - Reddit (r/macapps, r/SideProject)
-# - Hacker News "Show HN"
-```
-
-### Release Checklist
-
-**Pre-Release:**
-- [ ] All features tested and working
-- [ ] Version updated in `package.json`
-- [ ] `.env` file has correct Apple credentials
-- [ ] Git status is clean (all changes committed)
-
-**Build:**
-- [ ] Ran: `rm -rf release/ && npm run build && npx electron-builder --mac --x64 --arm64`
-- [ ] Build completed without errors
-- [ ] All 4 files created (2 DMG + 2 ZIP)
-
-**Verification:**
-- [ ] Code signature verified: `codesign -dv release/mac-arm64/ScreenVault.app`
-- [ ] Notarization verified: `spctl -a -vv release/mac-arm64/ScreenVault.app`
-- [ ] App launches from `release/mac-arm64/ScreenVault.app`
-- [ ] All features tested in built app
-
-**GitHub Release:**
-- [ ] GitHub release created with `gh release create v1.0.3`
-- [ ] All 4 files uploaded to release
-- [ ] Release notes include what's new, download links, installation steps
-- [ ] Release is public and visible
-
-**Website Update:**
-- [ ] `website/download.html` updated with new version URLs
-- [ ] Changes committed to git
-- [ ] Changes pushed to main branch
-- [ ] Vercel deployment completed (check vercel.com dashboard)
-- [ ] Website tested - download button works
-- [ ] Downloaded file is correct version
-
-**Post-Release:**
-- [ ] Tested complete download → install → launch flow
-- [ ] Updated SCREENVAULT_CONTEXT.md with latest version number
-- [ ] Announced release (optional)
-
-### Quick Commands Reference
-
-```bash
-# Check current version
-grep '"version"' package.json
-
-# List all releases
-gh release list
-
-# View specific release
-gh release view v1.0.3
-
-# Delete a release (if needed)
-gh release delete v1.0.3 --yes
-
-# Re-upload a file to existing release
-gh release upload v1.0.3 release/ScreenVault-1.0.3-arm64.dmg --clobber
-
-# Check Vercel deployment status
-vercel ls
-
-# Force Vercel redeploy
-vercel --prod
-```
-
----
-
-## 📂 PROJECT STRUCTURE
+## Project Structure
 
 ```
 screenvault/
 ├── electron/
-│   ├── main.js           # Main process: IPC, thumbnails, cache, OCR tags
-│   ├── preload.js        # Bridge: exposes APIs (includes useThumbnail param)
-│   └── database.js       # SQLite setup and migrations
+│   ├── main.js                    # Main process: IPC, windows, shortcuts, thumbnails, OCR
+│   ├── preload.js                 # Bridge: exposes APIs to renderer
+│   ├── preload-overlay.js         # Preload for region selector overlay
+│   ├── database.js                # SQLite setup and migrations
+│   └── scrollCapture/
+│       ├── captureController.js   # Scrolling screenshot orchestrator
+│       ├── stitchEngine.js        # v10 content-aware Row-MAD stitching
+│       ├── frameCollector.js      # Screen region capture (screencapture -R)
+│       ├── browserCapture.js      # CDP full-page capture
+│       └── browserDetect.js       # Browser detection
 ├── src/
 │   ├── components/
-│   │   ├── Dashboard.tsx      # Main UI (toolbar, folders, gallery) + debounced loading
-│   │   ├── Gallery.tsx        # Screenshot grid with virtual scrolling + debounced search
-│   │   ├── Editor.tsx         # Screenshot annotation editor (full-res images)
-│   │   └── ScreenshotModal.tsx # Screenshot viewer (full-res images, 95vw width)
+│   │   ├── Dashboard.tsx          # Main UI (toolbar, folders, gallery)
+│   │   ├── Gallery.tsx            # Screenshot grid with virtual scrolling
+│   │   ├── Editor.tsx             # Screenshot annotation editor
+│   │   └── ScreenshotModal.tsx    # Screenshot viewer modal
 │   ├── hooks/
-│   │   └── useElectronScreenshots.ts # Screenshot capture logic
+│   │   └── useElectronScreenshots.ts
 │   └── lib/
-│       └── database.ts        # Database queries
-├── website/              # Marketing landing page (Vercel/Netlify) 🆕
-│   ├── index.html        # Landing page
-│   ├── download.html     # Download confirmation page
-│   ├── assets/           # Website images (camera.png, screenshots)
-│   └── README.md         # Deployment instructions
-├── release/              # Build output directory
-├── db/                   # SQLite database files
-├── vercel.json           # Vercel deployment config (serves from website/)
-├── package.json          # Dependencies and build config
-└── OPTIMIZATION_*.md     # Performance optimization documentation
+│       └── database.ts
+├── website/                       # Marketing site (tryscreenvault.com)
+│   ├── index.html
+│   ├── download.html
+│   └── assets/
+├── scripts/
+│   └── notarize.js                # Apple notarization (skips for local dev builds)
+├── release/                       # Build output
+├── db/                            # SQLite database files
+├── entitlements.mac.plist         # macOS entitlements for signing
+├── vercel.json                    # Vercel deployment config
+└── package.json                   # Dependencies and build config
 ```
 
 ---
 
-## 🔧 KEY TECHNICAL DETAILS
+## Brand & Design System
 
-### Performance Architecture
+### Colors
+| Token | Value | Usage |
+|-------|-------|-------|
+| Background primary | `#e9e6e4` | Website bg, light surfaces |
+| Text primary / Dark | `#161419` | Text, dark UI elements |
+| Dark gradient | `#2a2730` → `#161419` | Folder cards, overlay banners, progress UI |
+| Border | `rgba(22, 20, 25, 0.1)` | Subtle borders |
 
-#### 1. LRU Cache System (Phase 3)
-```javascript
-// electron/main.js
-class LRUCache {
-  constructor(maxSize = 50 * 1024 * 1024) { // 50MB
-    this.cache = new Map();
-    this.maxSize = maxSize;
-    this.currentSize = 0;
-  }
+### Fonts
+| Font | Usage |
+|------|-------|
+| **Space Grotesk** | Titles, headings, UI labels |
+| **Inter** | Body text, descriptions |
+| **Playfair Display** (italic) | Decorative/accent text on website |
 
-  get(key) {
-    if (!this.cache.has(key)) return null;
-    // Move to end (most recently used)
-    const value = this.cache.get(key);
-    this.cache.delete(key);
-    this.cache.set(key, value);
-    return value.data;
-  }
-
-  set(key, data) {
-    const size = Buffer.byteLength(data);
-    // Evict oldest entries until we have space
-    while (this.currentSize + size > this.maxSize && this.cache.size > 0) {
-      const firstKey = this.cache.keys().next().value;
-      const firstValue = this.cache.get(firstKey);
-      this.currentSize -= firstValue.size;
-      this.cache.delete(firstKey);
-    }
-    this.cache.set(key, { data, size });
-    this.currentSize += size;
-  }
-
-  invalidate(key) { /* ... */ }
-  clear() { /* ... */ }
-  getStats() { /* ... */ }
-}
-
-const fileCache = new LRUCache(50 * 1024 * 1024);
-```
-
-#### 2. Smart OCR Tag Generation (Phase 3)
-```javascript
-// electron/main.js - 3-phase algorithm
-function generateTags(ocrText) {
-  const categoryTags = [];
-  const keywordTags = [];
-
-  // Phase 1: Pattern-based category detection (PRIORITY)
-  if (/function|const|=>|interface/.test(lowerText)) categoryTags.push('code');
-  if (/terminal|bash|npm|git|sudo/.test(lowerText)) categoryTags.push('terminal');
-  if (/http|localhost|127\.0\.0\.1/.test(lowerText)) categoryTags.push('web');
-  // ... 25+ patterns
-
-  // Phase 2: Smart keyword extraction (SECONDARY)
-  const words = lowerText
-    .replace(/[^\w\s]/g, ' ')
-    .split(/\s+/)
-    .filter(w => w.length >= 4 && !noiseWords.has(w));
-
-  const wordFreq = new Map();
-  words.forEach(word => {
-    wordFreq.set(word, (wordFreq.get(word) || 0) + 1);
-  });
-
-  const sortedWords = Array.from(wordFreq.entries())
-    .filter(([word, count]) => count >= 1 && count <= 5) // Not too rare, not too common
-    .sort((a, b) => b[1] - a[1])
-    .map(([word]) => word);
-
-  keywordTags.push(...sortedWords.slice(0, 3));
-
-  // Phase 3: Capitalized words (FALLBACK)
-  if (categoryTags.length === 0 && keywordTags.length === 0) {
-    const capitalizedWords = ocrText.match(/\b[A-Z][a-z]{2,}\b/g) || [];
-    // ...
-  }
-
-  // Combine: Categories first, then keywords
-  return [
-    ...new Set(categoryTags),
-    ...keywordTags.filter(kw => !categoryTags.includes(kw))
-  ].slice(0, 8);
-}
-```
-
-#### 3. Thumbnail System with Cache Integration
-```javascript
-// electron/main.js
-function generateThumbnail(imagePath) {
-  const thumbnailPath = getThumbnailPath(imagePath);
-  if (fs.existsSync(thumbnailPath)) return thumbnailPath;
-
-  const img = nativeImage.createFromPath(imagePath);
-  const resized = img.resize({ width: 300, quality: 'good' });
-  const jpegData = resized.toJPEG(80);
-  fs.writeFileSync(thumbnailPath, jpegData);
-  return thumbnailPath;
-}
-
-// Smart IPC handler with cache
-ipcMain.handle('file:read', async (_e, filePath, useThumbnail = true) => {
-  let pathToRead = filePath;
-
-  if (useThumbnail) {
-    const thumbPath = getThumbnailPath(filePath);
-    if (fs.existsSync(thumbPath)) {
-      pathToRead = thumbPath;
-    } else {
-      const generated = generateThumbnail(filePath);
-      if (generated) pathToRead = generated;
-    }
-  }
-
-  // Check cache first
-  const cacheKey = pathToRead;
-  const cachedData = fileCache.get(cacheKey);
-  if (cachedData) {
-    console.log(`[FileRead] Cache HIT: ${path.basename(pathToRead)}`);
-    return { data: cachedData, error: null };
-  }
-
-  // Cache miss - read and cache
-  const data = fs.readFileSync(pathToRead).toString('base64');
-  fileCache.set(cacheKey, data);
-  return { data, error: null };
-});
-
-// Cache invalidation
-folderWatcher.on('change', (filePath) => {
-  fileCache.invalidate(filePath);
-  fileCache.invalidate(getThumbnailPath(filePath));
-});
-
-folderWatcher.on('unlink', (filePath) => {
-  fileCache.invalidate(filePath);
-  fileCache.invalidate(getThumbnailPath(filePath));
-});
-```
-
-#### 4. Virtual Scrolling
-```typescript
-// src/components/Gallery.tsx
-import { Virtuoso } from 'react-virtuoso';
-
-// Group screenshots into rows for virtual rendering
-const screenshotRows = useMemo(() => {
-  const rows: Screenshot[][] = [];
-  for (let i = 0; i < screenshots.length; i += columnCount) {
-    rows.push(screenshots.slice(i, i + columnCount));
-  }
-  return rows;
-}, [screenshots, columnCount]);
-
-// Only render visible rows
-<Virtuoso
-  data={screenshotRows}
-  totalCount={screenshotRows.length}
-  itemContent={renderRow}
-  overscan={2}
-/>
-```
-
-#### 5. Debouncing & Deduplication
-```typescript
-// src/components/Gallery.tsx
-const loadingRef = useRef(false); // Prevent overlapping queries
-const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-const loadScreenshots = async (silent = false) => {
-  if (debounceRef.current) clearTimeout(debounceRef.current);
-
-  // User actions: debounce
-  if (!silent) {
-    debounceRef.current = setTimeout(() => executeLoad(silent), 100);
-    return;
-  }
-
-  // Background refreshes: immediate but with deduplication
-  executeLoad(silent);
-};
-
-const executeLoad = async (silent = false) => {
-  if (loadingRef.current) return; // Skip overlapping queries
-  loadingRef.current = true;
-  // ... execute query
-  loadingRef.current = false;
-};
-```
-
-### IPC Communication Pattern
-```typescript
-// Renderer → Main (preload.js)
-window.electronAPI.file.read(path, useThumbnail) // useThumbnail added in Phase 3
-window.electronAPI.file.openScreenshotsFolder()
-
-// Main process (main.js)
-ipcMain.handle('file:read', async (_e, filePath, useThumbnail = true) => {
-  // Returns thumbnail by default, full-res if useThumbnail = false
-});
-
-ipcMain.handle('cache:stats', async () => {
-  return { data: fileCache.getStats(), error: null };
-});
-
-ipcMain.handle('cache:clear', async () => {
-  fileCache.clear();
-  return { data: true, error: null };
-});
-```
-
-### Drag-and-Drop Implementation
-- **Internal Drag:** Uses `dataTransfer.setData('text/plain', screenshot.id)` for folder moves
-- **External Drag:** Uses File API with `fetch('file://...')` to create File objects
-- **Fallback:** IPC-based `startDrag` for compatibility
-
-### Database Schema (Key Tables)
-- **screenshots:** id, file_name, storage_path, file_type, ocr_text, folder_id, is_favorite, thumbnail_path
-- **folders:** id, name, parent_id, screenshot_count
-- **tags:** id, screenshot_id, tag_name
-
-### Database Indexes (Performance-Critical)
-```sql
-CREATE INDEX idx_is_favorite ON screenshots(is_favorite);
-CREATE INDEX idx_is_archived ON screenshots(is_archived);
-CREATE INDEX idx_storage_path ON screenshots(storage_path);
-CREATE INDEX idx_folder_favorite ON screenshots(folder_id, is_favorite);
-CREATE INDEX idx_folder_created ON screenshots(folder_id, created_at DESC);
-```
-
-### File Storage
-- Screenshots: `~/Pictures/ScreenVault/`
-- Thumbnails: `~/Pictures/ScreenVault/.thumbnails/`
-- Database: `db/screenvault.db`
-- Temp files: System temp directory
+### UI Conventions
+- Scrolling screenshot overlay: transparent body (no tint), black selection border
+- Instruction banners: dark gradient bg, Space Grotesk, `#e9e6e4` text, blur backdrop
+- Progress UI: same dark gradient style as instruction banners
+- Folder cards: dark gradient, 120px tiles, no image loading
+- Custom scrollbars: 10px width, transparent track, `#94918f` thumb
 
 ---
 
-## 📋 COPY THIS FOR NEXT SESSION
+## Build & Launch Commands
 
-I'm continuing work on ScreenVault, an Electron-based macOS screenshot management app.
+### Development Build (Fast, Unsigned — For Testing)
 
-**Current Status:**
-- ✅ Apple-style thumbnail preview (bottom-left corner)
-- ✅ Auto-clipboard copy on screenshot
-- ✅ Auto-save after 6 seconds with progress bar
-- ✅ Editor popup on thumbnail click (save on "Done", NO delete button)
-- ✅ Responsive editor toolbar (Apple-style, scales with window)
-- ✅ Sort screenshots (Newest/Oldest dropdown + Reload button)
-- ✅ OCR with smart 3-phase tag generation (8 relevant tags)
-- ✅ Import Files & Folders (structure mirroring)
-- ✅ File watcher (auto-import from ~/Pictures/ScreenVault)
-- ✅ Fixed duplicate screenshots & editor save issues
-- ✅ Gallery shows only files that exist on disk
-- ✅ UI enhancements: object-contain tiles, compact folder cards, keyboard shortcuts
-- ✅ Modal improvements: click outside to close, Escape key support
-- ✅ Drag-and-drop to external apps (WhatsApp, VS Code, etc.)
-- ✅ Quick folder access button in toolbar
-- ✅ **Performance Phase 1 (5-10x faster):**
-  - Database indexes (10x faster queries)
-  - Batch file checks (10-40x faster verification)
-  - React memoization (40-60% fewer re-renders)
-- ✅ **Performance Phase 2 (10-20x faster gallery):**
-  - Debounce & state updates (40% fewer queries)
-  - Virtual scrolling (10x faster with 1000+ screenshots, 75% less memory)
-  - Image thumbnails (10-20x faster loading, 100x less data transfer)
-- ✅ **Performance Phase 3 (Instant & Crystal Clear):**
-  - LRU file cache (instant folder switching, <100ms)
-  - Smart OCR tags (3-phase algorithm, 8 relevant tags)
-  - Full-resolution viewing (modal + editor, crystal clear images)
-- ✅ **Marketing Website Separation (PR #47):**
-  - Dedicated `/website` directory for landing page
-  - Vercel configuration for automatic deployment
-  - Complete separation from Electron app
-- ✅ **UI Fixes & Real-time Updates (PR #45):**
-  - Real-time favorite count updates (instant, no delay)
-  - Edited images refresh immediately in gallery
-  - Search bar moved to screenshots section
-  - Simplified window title
-- ✅ **UI Design Improvements (PR #48):**
-  - Left sidebar layout (220px, organized sections)
-  - Rounded corners throughout entire app
-  - Subtle shadows and elevation effects
-  - Enhanced hover animations and transitions
-  - Always-visible keyboard shortcuts
-- ✅ **Folder UI Refinements (PR #50):**
-  - Compact folder cards (120px, 25% smaller)
-  - Consistent dark gradient (#2a2730 → #161419) for all folders
-  - Removed mosaic image previews (~150 lines of code)
-  - Instant folder rendering (no image loading delays)
-  - Fixed double scrollbar issue in gallery section
-  - Single clean scrollbar for better UX
-- ✅ **UI Improvements (PR #52):**
-  - Full-height gallery layout (removed bottom blank space)
-  - 4-column grid with increased spacing (less cluttered tiles)
-  - Keyboard shortcuts in clear text format (Cmd+Shift+S)
-  - ScreenVault branding in sidebar (replaced Capture button)
-  - Consistent folder styling (removed jarring blue colors)
-  - Custom scrollbar styling (seamless with app theme)
-- ✅ **Code Signing & Notarization (v1.0.2):** 🔥 PRODUCTION READY!
-  - Fully signed with Developer ID Application certificate
-  - Notarized by Apple (no security warnings for users)
-  - Performance-optimized entitlements (JIT, WASM, file access)
-  - Universal binaries (Intel + Apple Silicon)
-  - GitHub releases with signed DMG/ZIP files
-  - Website auto-download integration
-- ✅ **Editor Window Improvements & Fullscreen Screenshot (v1.0.3 - PR #55):** MERGED
-  - Editor appears in Cmd+Tab and goes to background properly
-  - Crystal clear image rendering in editor
-  - Precise arrow annotations
-  - NEW: Fullscreen screenshot (Cmd+Shift+D)
-  - Tray menu support for fullscreen capture
-- 🎯 **Toolbar Shortcut & Import Menu Fix (v1.0.4 - PR #56):** OPEN
-  - Added Cmd+Shift+D to keyboard shortcuts toolbar
-  - Fixed import menu z-index bug (buttons now clickable)
-  - Enhanced error handling for import functions
-
-**Latest PRs:**
-- PR #32: Duplicates Fix (merged)
-- PR #38: UI Enhancements (merged)
-- PR #39: Drag-Drop & Folder Access (merged)
-- PR #40: Database Indexes Performance (merged)
-- PR #41: Batch File Checks & React Optimizations (merged)
-- PR #42: Debouncing + Virtual Scrolling (merged)
-- PR #43: Image Thumbnails (merged)
-- PR #44: LRU Cache + Smart OCR + Full-Res Viewing (merged)
-- PR #45: Real-time Favorites + Edited Image Refresh + UI Fixes (merged)
-- PR #47: Marketing Website Separation (merged)
-- PR #48: UI Design Improvements (merged)
-- PR #50: Folder UI Refinements (merged)
-- PR #52: UI Improvements - Gallery Layout, Branding, and Styling (merged)
-- PR #55: Editor Window Improvements & Fullscreen Screenshot (merged)
-- PR #56: Toolbar Shortcut & Import Menu Fix (OPEN) 🎯
-
-**Current Version:** v1.0.4 (in development - PR #56 open)
-**Current Branch:** `feature/toolbar-shortcut-and-import-fix`
-**Status:** PR #56 ready for review and merge
-
-**🚀 Quick Build & Launch:**
 ```bash
-# IMPORTANT: Always use this command to test your changes in the built Electron app
-pkill -f "ScreenVault" 2>/dev/null; sleep 1; npm run build && npx electron-builder --mac --dir -c.mac.identity=null && open release/mac-arm64/ScreenVault.app
+cd /Users/sharveen/Downloads/screenvault
+export PATH="/opt/homebrew/bin:/usr/bin:/bin:$PATH"
+
+# Build frontend + Electron app
+npx vite build && CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac --dir -c.mac.identity=null
+
+# Ad-hoc codesign (required because no Apple dev cert for local builds)
+APP="release/mac-arm64/ScreenVault.app"
+codesign --force --sign - "$APP/Contents/Frameworks/Electron Framework.framework"
+codesign --force --sign - "$APP/Contents/Frameworks/"*.framework
+codesign --force --sign - "$APP/Contents/Frameworks/"*.helper.app 2>/dev/null || true
+codesign --force --sign - "$APP"
+
+# Launch
+open "$APP"
 ```
 
-**📊 Check Git Status:**
+**Note:** The `CSC_IDENTITY_AUTO_DISCOVERY=false` env var also triggers the notarize script to skip (see `scripts/notarize.js`).
+
+### Development Mode (Hot Reload)
 ```bash
-git status                           # See modified files
-git log --oneline -10               # Recent commits
-git log origin/main..HEAD --oneline # Commits ahead of main
-gh pr list                          # List open PRs
-```
-
-**🔀 Create New Branch & PR Workflow:**
-```bash
-# Step 1: Create new feature branch
-git checkout -b feature/your-feature-name
-
-# Step 2: Stage and commit your changes
-git add src/components/Dashboard.tsx src/components/Gallery.tsx src/index.css
-# Or add all changes:
-git add -A
-
-# Step 3: Commit with detailed message
-git commit -m "$(cat <<'EOF'
-feat: Your feature title here
-
-## Changes
-- Specific change 1 with details
-- Specific change 2 with details
-- Specific change 3 with details
-
-## Technical Details
-- src/components/Dashboard.tsx: What changed and why
-- src/components/Gallery.tsx: What changed and why
-- src/index.css: What changed and why
-
-## Visual Impact
-- Impact on UI/UX
-- Performance improvements (if any)
-
-Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>
-EOF
-)"
-
-# Step 4: Push branch to GitHub
-git push -u origin feature/your-feature-name
-
-# Step 5: Create Pull Request
-gh pr create --title "Your PR Title" --body "$(cat <<'EOF'
-## Summary
-Brief description of what this PR accomplishes.
-
-## Changes
-- Change 1
-- Change 2
-- Change 3
-
-## Files Modified
-- `file1.tsx` - Description
-- `file2.tsx` - Description
-
-## Testing
-- [x] Tested scenario 1
-- [x] Tested scenario 2
-- [x] Tested scenario 3
-
-## Visual Impact (if applicable)
-✨ Describe UI/UX improvements
-
----
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
-EOF
-)" --base main
-```
-
-**⚠️ Important Notes for Creating PRs:**
-- **Always build and test** using the Electron app build command BEFORE creating PR
-- **Never use `npm run dev`** for testing - it doesn't reflect the actual built app behavior
-- **Test thoroughly** with real data (screenshots, folders, etc.)
-- **Include detailed commit messages** with ## Changes and ## Technical Details sections
-- **Add Co-Authored-By: Claude Sonnet 4.5** to all commits
-- **Include 🤖 Generated with Claude Code** in PR descriptions
-
-**📁 Important Files:**
-- `electron/main.js` - IPC handlers, LRU cache, OCR, thumbnails, cache invalidation
-- `electron/preload.js` - API bridge (includes useThumbnail parameter)
-- `src/components/Dashboard.tsx` - Sidebar, branding, folder UI, shortcuts toolbar
-- `src/components/Gallery.tsx` - 4-column grid, virtual scrolling, full-height layout
-- `src/components/ScreenshotModal.tsx` - Full-res images, modal UI
-- `src/components/Editor.tsx` - Annotation editor with full-res images
-- `src/index.css` - Global styles, custom scrollbar styling
-- `website/` - Marketing landing page (separate deployment)
-- `SCREENVAULT_CONTEXT.md` - **THIS FILE** - Complete documentation
-
-**⚡ Performance & UI Notes:**
-- **LRU Cache:** 50MB limit, instant folder switching (<100ms vs 1-2s)
-- **Thumbnails:** 300px JPEG at 80% quality in `.thumbnails/` folder
-- **Virtual scrolling:** react-virtuoso with overscan={2}, 4-column grid (max)
-- **Debounce timings:** 100ms (Gallery search), 150ms (Dashboard load), 300ms (refresh)
-- **Database:** 5 strategic indexes for 10x faster queries
-- **OCR Tags:** 3-phase algorithm (categories → keywords → capitalized), 8 tags max
-- **Full-res viewing:** Modal and editor use `useThumbnail: false` for crystal clear images
-- **Memory:** 15MB gallery + 50MB cache = 65MB total (vs 300MB before optimizations)
-- **Folder cards:** No image loading, instant rendering with dark gradients (120px tiles)
-- **Gallery layout:** Full-height with proper flex chain, 4 columns with gap-4 spacing
-- **Custom scrollbars:** 10px width, transparent track, #94918f thumb color
-- **Branding:** ScreenVault logo + name in sidebar (replaced Capture button)
-- **Shortcuts:** Clear text format (Cmd+Shift+S) spread evenly across toolbar
-
-Please read full context from SCREENVAULT_CONTEXT.md in the workspace.
-
----
-
-## 🐛 KNOWN ISSUES & NOTES
-
-### DO NOT ATTEMPT
-- **Auth System Removal:** Breaks screenshot saving functionality. Keep auth system in place.
-- **OCR Worker Caching (Optimization #9):** Previously attempted, caused slower OCR. Skip this optimization.
-
-### Build Notes
-- Always use `--dir` flag for unsigned dev builds
-- Copying built app breaks code signature - use re-signing command or rebuild
-- `webSecurity: false` is required for drag-and-drop file:// protocol support
-
-### Development Tips
-- Use `npm run dev` for development with hot reload
-- Use `pkill -f "ScreenVault"` before launching new builds
-- Check `git status` and `git log` before creating new branches
-- Always include detailed commit messages with bullet points
-- Add "Co-Authored-By: Claude Sonnet 4.5" to commits
-- Include "🤖 Generated with Claude Code" in PR descriptions
-- Test with large datasets (1000+ screenshots) to verify performance
-- Check console logs for cache hits/misses and OCR tag generation
-- Use `cache:stats` IPC handler to monitor cache usage
-
-### Completed Optimizations (Phases 1-3)
-From original 15-point plan:
-- ✅ #1: Database indexes (Phase 1)
-- ✅ #10: Batch file checks (Phase 1)
-- ✅ #13: React.memo and useMemo (Phase 1)
-- ✅ #14: Debounce improvements (Phase 2)
-- ✅ #4: Virtual scrolling (Phase 2)
-- ✅ #5: Thumbnail generation (Phase 2)
-- ✅ #11: File read caching (Phase 3) ✅
-- ✅ OCR tag generation improvements (Phase 3) ✅
-- ✅ Full-resolution viewing (Phase 3) ✅
-- ❌ #9: Tesseract worker caching (attempted, caused issues, skip)
-
-**Current performance is excellent for production use!** All major optimizations complete.
-
----
-
-## 📊 Performance Benchmarks
-
-### Phase 3 Results (Combined Impact with Phase 1 & 2)
-| Metric | Before All Phases | After Phase 3 | Improvement |
-|--------|-------------------|---------------|-------------|
-| **Gallery Load (100 screenshots)** | 8-12s | 0.5-1s | **10-20x faster** |
-| **Gallery Load (1000 screenshots)** | 60-80s | 3-5s | **15-20x faster** |
-| **Folder Switching (cached)** | 1-2s | <100ms | **10-20x faster** |
-| **Modal Image Quality** | 300px blurry | Full-res crisp | **Crystal clear** |
-| **Editor Image Quality** | 300px blurry | Full-res crisp | **Crystal clear** |
-| **OCR Tag Relevance** | 1-2 generic | 6-8 accurate | **3-4x more tags** |
-| **Data Transfer (100 screenshots)** | 300MB | 3MB | **100x less** |
-| **Memory Usage (100 screenshots)** | 300MB | 15MB + 50MB cache | **5x reduction** |
-| **DOM Nodes (1000 screenshots)** | 15,000 | 600 | **25x fewer** |
-| **Database Queries (rapid events)** | 10 queries | 1-2 queries | **5-10x fewer** |
-| **Scroll Performance** | Laggy at 500+ | Smooth at 5000+ | **10x better** |
-| **First Tile Visible** | 2-3s | <100ms | **20-30x faster** |
-
-### Real-World User Experience
-**Before All Phases:**
-- User opens app with 1000 screenshots: 60s blank screen → frustration
-- Scrolling: Stutters and lags
-- Memory: 500MB+ → crashes on 8GB machines
-- Switching folders: Slow, laggy, 1-2s every time
-- Viewing screenshots: Blurry 300px thumbnails
-- OCR tags: 1-2 generic words
-
-**After Phase 3:**
-- User opens app with 1000 screenshots: 3-5s fully loaded → delight
-- Scrolling: Butter smooth even with 5000+ screenshots
-- Memory: ~65MB (15MB gallery + 50MB cache) → runs on any machine
-- Switching folders: **Instant** with cache (<100ms) → feels native
-- Viewing screenshots: **Crystal clear** full-resolution images
-- OCR tags: **6-8 relevant** categorized tags
-
-**Production Ready:** App now handles power users with massive libraries flawlessly! 🚀
-
-### Cache Performance
-- **Cache hits:** <100ms (instant)
-- **Cache misses:** ~500ms (disk read + caching)
-- **Cache capacity:** ~1,250-2,500 thumbnails (20-40KB each)
-- **Eviction:** LRU algorithm, automatic at 50MB limit
-- **Invalidation:** Automatic on file change/delete via watcher
-
-### OCR Tag Quality
-- **Phase 1 categories:** code, terminal, web, github, api, etc.
-- **Phase 2 keywords:** Frequency-based, filtered (4+ chars, no noise words)
-- **Phase 3 fallback:** Capitalized words (app/product names)
-- **Result:** 8 tags with category prioritization vs 1-2 generic words
-
-**The app is now production-ready with world-class performance!** 🎉
-
----
-
-## 📋 QUICK START FOR NEXT SESSION (COPY THIS!)
-
-```
-I'm continuing work on ScreenVault, an Electron-based macOS screenshot management app.
-
-Please read the full context from SCREENVAULT_CONTEXT.md in the workspace.
-
-Current version: v1.0.4 (in development - PR #56 open)
-Current branch: feature/toolbar-shortcut-and-import-fix
-Open PR: https://github.com/sharveen22/screenvault/pull/56
-
-Latest changes (PR #56):
-1. Added Cmd+Shift+D fullscreen capture shortcut to toolbar
-2. Fixed import menu z-index bug (buttons now clickable)
-3. Enhanced error handling for import functions with logging
-
-Files modified:
-- src/components/Dashboard.tsx: Toolbar shortcut, import menu z-index fix, error handling
-
-Quick test build command (unsigned - for development):
-mv .env .env.backup 2>/dev/null || true; pkill -f "ScreenVault" 2>/dev/null; sleep 1; npm run build && npx electron-builder --mac --dir -c.mac.identity=null && mv .env.backup .env 2>/dev/null || true; open release/mac-arm64/ScreenVault.app
-
-For production release (signed & notarized):
-rm -rf release/ && npm run build && npx electron-builder --mac --x64 --arm64
-
-See SCREENVAULT_CONTEXT.md sections:
-- "Toolbar Shortcut & Import Menu Fix (v1.0.4)" for latest changes
-- "Create New Branch & PR Workflow" for GitHub workflow
-- "Complete Release Workflow" for release and deployment
-- "BUILD, SIGN & LAUNCH COMMANDS" for all build commands
-```
-
----
-
-## 🔄 COMMON WORKFLOWS
-
-### 1. Quick Build & Test (Development)
-```bash
-# Kill app, build unsigned, launch
-mv .env .env.backup 2>/dev/null || true
-pkill -f "ScreenVault" 2>/dev/null
-sleep 1
-npm run build && npx electron-builder --mac --dir -c.mac.identity=null
-mv .env.backup .env 2>/dev/null || true
-open release/mac-arm64/ScreenVault.app
-```
-
-### 2. Create New Feature Branch & PR
-```bash
-# Step 1: Start from latest main
-git checkout main
-git pull origin main
-
-# Step 2: Create new feature branch
-git checkout -b feature/your-feature-name
-
-# Step 3: Make changes, then stage them
-git add src/components/Dashboard.tsx electron/main.js
-# OR add all changes:
-git add -A
-
-# Step 4: Commit with detailed message
-git commit -m "$(cat <<'EOF'
-feat: Your feature title
-
-## Changes
-- Change 1 description
-- Change 2 description
-- Change 3 description
-
-## Technical Details
-- src/components/Dashboard.tsx: What changed and why
-- electron/main.js: What changed and why
-
-## Testing
-- [x] Tested scenario 1
-- [x] Tested scenario 2
-
-Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>
-EOF
-)"
-
-# Step 5: Push branch to GitHub
-git push -u origin feature/your-feature-name
-
-# Step 6: Create Pull Request
-gh pr create --title "Your PR Title" --body "$(cat <<'EOF'
-## Summary
-Brief description of what this PR accomplishes.
-
-## Changes
-- Change 1
-- Change 2
-- Change 3
-
-## Files Modified
-- `file1.tsx` - Description
-- `file2.tsx` - Description
-
-## Testing
-- [x] Tested scenario 1
-- [x] Tested scenario 2
-
----
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
-EOF
-)" --base main
-
-# Step 7: View the PR
-gh pr view
-```
-
-### 3. Production Release (After PR Merged)
-```bash
-# ============================================
-# STEP 1: UPDATE VERSION
-# ============================================
-# Edit package.json manually:
-# Change "version": "1.0.3" to "version": "1.0.4"
-
-# ============================================
-# STEP 2: BUILD SIGNED & NOTARIZED APP
-# ============================================
-# Ensure .env file exists with Apple credentials:
-# APPLE_ID=sharveenkumar@gmail.com
-# APPLE_APP_SPECIFIC_PASSWORD=xxxx-xxxx-xxxx-xxxx
-# APPLE_TEAM_ID=YG5879BX5G
-
-# Clean previous builds
-rm -rf release/
-
-# Build for both architectures with signing and notarization
-# This will take 5-15 minutes due to Apple notarization
-npm run build && npx electron-builder --mac --x64 --arm64
-
-# ============================================
-# STEP 3: VERIFY SIGNING & NOTARIZATION
-# ============================================
-# Check code signature
-codesign -dv --verbose=4 "release/mac-arm64/ScreenVault.app"
-# Should show: Authority=Developer ID Application: CATALYST GROWTH SG PTE. LTD.
-
-# Verify notarization (Gatekeeper check)
-spctl -a -vv -t install "release/mac-arm64/ScreenVault.app"
-# Should show: accepted, source=Notarized Developer ID
-
-# ============================================
-# STEP 4: TEST THE BUILT APP
-# ============================================
-open release/mac-arm64/ScreenVault.app
-# Test all features thoroughly
-
-# ============================================
-# STEP 5: CREATE GITHUB RELEASE
-# ============================================
-# Verify all 4 files exist
-ls -lh release/*.dmg release/*.zip | grep -v blockmap
-
-# Create GitHub release with all files
-gh release create v1.0.4 \
-  release/ScreenVault-1.0.4.dmg \
-  release/ScreenVault-1.0.4-arm64.dmg \
-  release/ScreenVault-1.0.4-mac.zip \
-  release/ScreenVault-1.0.4-arm64-mac.zip \
-  --title "ScreenVault v1.0.4 - Toolbar Shortcut & Import Menu Fix" \
-  --notes "$(cat <<'EOF'
-# ScreenVault v1.0.4 - Toolbar Shortcut & Import Menu Fix
-
-## What's New
-✅ Added Cmd+Shift+D shortcut to keyboard shortcuts toolbar
-✅ Fixed import menu buttons (Files/Folder) not working
-✅ Enhanced error handling for import operations
-
-## Download Options
-
-### For Apple Silicon Macs (M1/M2/M3) - Recommended
-- **DMG:** `ScreenVault-1.0.4-arm64.dmg` (~125 MB)
-- **ZIP:** `ScreenVault-1.0.4-arm64-mac.zip` (~120 MB)
-
-### For Intel Macs
-- **DMG:** `ScreenVault-1.0.4.dmg` (~131 MB)
-- **ZIP:** `ScreenVault-1.0.4-mac.zip` (~127 MB)
-
-## Installation
-1. Download the appropriate DMG file for your Mac
-2. Open the DMG file
-3. Drag ScreenVault.app to your Applications folder
-4. Launch ScreenVault from Applications
-5. Grant necessary permissions when prompted
-
-## Security
-✅ **Code Signed** with Developer ID Application
-✅ **Notarized** by Apple
-✅ No "unidentified developer" warnings
-
-## System Requirements
-- macOS 11.0 or later
-- Apple Silicon (M1/M2/M3) or Intel processor
-- 100 MB free disk space
-
----
-
-**Full changelog:** https://github.com/sharveen22/screenvault/compare/v1.0.3...v1.0.4
-EOF
-)"
-
-# Verify release was created
-gh release view v1.0.4
-
-# ============================================
-# STEP 6: UPDATE WEBSITE DOWNLOAD LINKS
-# ============================================
-# Edit website/download.html
-# Update line 157 (manual download button):
-# Change v1.0.3 to v1.0.4 in the href URL
-
-# Update lines 171-173 (auto-download JavaScript):
-# Change both v1.0.3 to v1.0.4 in downloadUrl
-
-# ============================================
-# STEP 7: COMMIT & PUSH CHANGES
-# ============================================
-git checkout main
-git add package.json website/download.html SCREENVAULT_CONTEXT.md
-git commit -m "chore: Release v1.0.4
-
-## Changes
-- Updated version to v1.0.4
-- Updated website download links to point to v1.0.4
-- Updated context documentation
-
-Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>"
-
-git push origin main
-
-# Vercel will automatically deploy the updated website
-```
-
-### 4. Check Git Status
-```bash
-git status                           # See modified files
-git log --oneline -10               # Recent commits
-git log origin/main..HEAD --oneline # Commits ahead of main
-gh pr list                          # List open PRs
-git branch -a                       # List all branches
-```
-
-### 5. Merge PR and Update Local Main
-```bash
-# Merge PR via GitHub UI or CLI
-gh pr merge 56 --merge
-
-# Update local main
-git checkout main
-git pull origin main
-
-# Delete old feature branch (optional)
-git branch -d feature/toolbar-shortcut-and-import-fix
-git push origin --delete feature/toolbar-shortcut-and-import-fix
-```
-
----
-
-## 🎯 NEXT STEPS
-
-When ready to release v1.0.3:
-
-1. **Test the changes thoroughly:**
-   ```bash
-   pkill -f "ScreenVault" 2>/dev/null; sleep 1; npm run build && npx electron-builder --mac --dir -c.mac.identity=null && open release/mac-arm64/ScreenVault.app
-   ```
-
-2. **Create feature branch and PR:**
-   ```bash
-   git checkout -b feature/editor-window-fixes
-   git add electron/main.js SCREENVAULT_CONTEXT.md
-   git commit -m "fix: Editor window behavior improvements
-
-   ## Changes
-   - Fixed main window popping up when opening editor
-   - Fixed editor window staying on top during Cmd+Tab
-   - Fixed OCR file rename race condition
-   - Removed type: 'panel' from editor window
-   - Cleaned up unused window visibility tracking code
-
-   ## Technical Details
-   - electron/main.js: Added isOpeningEditor flag, removed wasMainWindowVisibleBeforeEditor
-   - electron/main.js: Delayed OCR until after editor closes
-   - electron/main.js: Removed type: 'panel' from BrowserWindow config
-
-   Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>"
-
-   git push -u origin feature/editor-window-fixes
-
-   gh pr create --title "Fix: Editor Window Behavior Improvements" --body "$(cat <<'EOF'
-   ## Summary
-   Fixes multiple editor window behavior issues for better UX.
-
-   ## Issues Fixed
-   1. Main window no longer pops up when opening editor
-   2. Editor window properly goes to background when Cmd+Tabbing to other apps
-   3. OCR no longer renames files while editor is loading them
-
-   ## Technical Changes
-   - Added `isOpeningEditor` flag to prevent unwanted window activation
-   - Removed `type: 'panel'` from editor BrowserWindow (was causing always-on-top behavior)
-   - Modified OCR timing to skip processing if file is currently open in editor
-   - Cleaned up unused `wasMainWindowVisibleBeforeEditor` flag
-
-   ## Testing
-   - [x] Screenshot capture → Click thumbnail → Editor opens, main window stays back
-   - [x] Editor open → Cmd+Tab to other apps → Editor goes to background properly
-   - [x] Editor loads without "loading..." issues
-   - [x] Save edited screenshots → Gallery updates immediately
-   - [x] OCR runs after editor closes
-
-   ## Files Modified
-   - `electron/main.js`: Window management, OCR timing, editor configuration
-   - `SCREENVAULT_CONTEXT.md`: Documentation updates
-
-   ---
-
-   🤖 Generated with [Claude Code](https://claude.com/claude-code)
-   EOF
-   )" --base main
-   ```
-
-3. **After PR is merged, follow the "Complete Release Workflow" in this document to:**
-   - Update version to v1.0.3 in package.json
-   - Build signed & notarized app
-   - Create GitHub release
-   - Update website download links
-   - Deploy to production
-
-**The app is production-ready with world-class performance!** 🎉
-
----
-
-## 📝 COPY-PASTE READY COMMANDS
-
-### Development Build (Fast, Unsigned)
-```bash
-mv .env .env.backup 2>/dev/null || true; pkill -f "ScreenVault" 2>/dev/null; sleep 1; npm run build && npx electron-builder --mac --dir -c.mac.identity=null && mv .env.backup .env 2>/dev/null || true; open release/mac-arm64/ScreenVault.app
+npm run dev
 ```
 
 ### Production Build (Signed & Notarized)
-```bash
-rm -rf release/ && npm run build && npx electron-builder --mac --x64 --arm64
+
+Requires `.env` file with Apple Developer credentials:
+```
+APPLE_ID=sharveenkumar@gmail.com
+APPLE_APP_SPECIFIC_PASSWORD=<app-specific-password>
+APPLE_TEAM_ID=YG5879BX5G
 ```
 
-### Verify Code Signing & Notarization
+```bash
+rm -rf release/
+npm run build && npx electron-builder --mac --x64 --arm64
+```
+
+### Verify Signing
 ```bash
 codesign -dv --verbose=4 "release/mac-arm64/ScreenVault.app"
 spctl -a -vv -t install "release/mac-arm64/ScreenVault.app"
 ```
 
-### Create Feature Branch & Commit
+---
+
+## Git & GitHub Workflow
+
+### Current State (March 10, 2026)
+- **Branch:** `main`
+- **Latest release pushed:** v1.0.4
+- **Unpushed changes:** All scrolling screenshot enhancements from this session
+
+### Standard PR Workflow
 ```bash
-git checkout main
-git pull origin main
-git checkout -b feature/my-feature
-git add -A
-git commit -m "feat: My feature description
+git checkout main && git pull origin main
+git checkout -b feature/your-feature-name
+# ... make changes ...
+git add <specific files>
+git commit -m "feat: Description
 
-## Changes
-- Change 1
-- Change 2
-
-Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>"
-git push -u origin feature/my-feature
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
+git push -u origin feature/your-feature-name
+gh pr create --title "Title" --body "..."
 ```
 
-### View PR Status
-```bash
-gh pr list
-gh pr view 56
-```
-
-### Merge PR & Update Main
-```bash
-gh pr merge 56 --merge
-git checkout main
-git pull origin main
-```
+### Release Workflow
+1. Update version in `package.json`
+2. Build signed & notarized: `npm run build && npx electron-builder --mac --x64 --arm64`
+3. Create GitHub release: `gh release create v1.0.X --title "v1.0.X" release/*.dmg release/*.zip`
+4. Update website download links in `website/index.html` and `website/download.html`
+5. Deploy website (Vercel auto-deploys from main)
 
 ---
 
-**End of ScreenVault Context Document**
-**Last Updated: January 17, 2026**
+## Version History
+
+### v1.0.4 (Latest Released — January 17, 2026)
+- Added Cmd+Shift+D fullscreen capture to toolbar
+- Fixed import menu buttons being unclickable (z-index issue)
+
+### v1.0.3 (January 2026)
+- Fixed editor window popping up main window
+- Fixed editor staying on top during Cmd+Tab
+- Fixed OCR file rename race condition
+- Added fullscreen screenshot (Cmd+Shift+D)
+- Enhanced image sharpness in editor
+- Fixed arrow annotation precision
+
+### Earlier Versions
+- Performance optimizations (Phases 1-3): virtual scrolling, LRU cache, thumbnail generation
+- Gallery load: 60-80s → 3-5s for 1000 screenshots
+- Memory usage: 300MB → 15MB + 50MB cache
+
+---
+
+## Scrolling Screenshot Enhancements (March 10, 2026 — NOT YET PUSHED)
+
+### Changes Made This Session
+
+1. **Stitch engine v10 — content-aware Row-MAD** (stitchEngine.js)
+   - Complete rewrite from NCC-based approach
+   - Only uses content-bearing rows for alignment (eliminates whitespace noise)
+   - Proven correct via exhaustive brute-force testing
+
+2. **isSameFrame threshold tightened** (stitchEngine.js)
+   - Changed from 1.5 → 0.3
+   - Fixes "repeated passages" bug where genuinely different frames were marked as duplicates
+
+3. **Removed auto-scrolling, switched to manual scroll capture** (captureController.js)
+   - Removed programmatic scrolling via Swift scrollhelper (scrollDriver.js)
+   - App now captures frames rapidly (~10fps) while user scrolls manually
+   - Uses fast `captureFrame()` instead of slow `captureStableFrame()` (except first frame)
+   - Increased max frames from 150 → 300
+
+4. **Fixed region selector coordinate offset** (main.js)
+   - Selection was shifting up ~2cm due to menu bar offset
+   - Fix: convert `clientX/clientY` to screen coords using `overlayWin.getContentBounds()`
+
+5. **Brand-consistent overlay UI** (main.js)
+   - Instruction banner: Space Grotesk font, dark gradient (`#2a2730` → `#161419`)
+   - Selection border: black, no overlay tint
+   - Progress bar: matching dark gradient style, simplified messages ("Capturing" / "Compiling")
+
+6. **Screenshot sound on Done** (captureController.js)
+   - Plays macOS `Screen Capture.aif` via `afplay` when user presses Done
+
+7. **Fixed dock icon disappearing** (captureController.js, browserCapture.js)
+   - `app.dock.hide()` was called but `dock.show()` not called in all code paths
+   - Moved dock restore to `finally` block in captureController
+   - Added dock restore to both success and error paths in browserCapture
+
+8. **Notarize script local dev skip** (scripts/notarize.js)
+   - Skips notarization when `CSC_IDENTITY_AUTO_DISCOVERY=false` (local dev builds)
+
+### Files Modified (Unpushed)
+- `electron/main.js` — region selector coords fix, brand UI, progress bar, capture border
+- `electron/scrollCapture/captureController.js` — manual scroll capture, screenshot sound, dock fix
+- `electron/scrollCapture/stitchEngine.js` — v10 content-aware Row-MAD (previous session)
+- `electron/scrollCapture/browserCapture.js` — dock restore fix
+- `scripts/notarize.js` — local dev build skip
+
+---
+
+## Known Issues & Notes
+
+### DO NOT
+- **Don't trust test-stitch.py** — its ground truth is wrong (only samples 4 rows)
+- **Don't use `pkill -f "ScreenVault"` in build scripts** — kills the running app unexpectedly
+- **Don't try `require('electron')` outside Electron** — resolves to npm package path string, not built-in module. Use pngjs for pure Node testing.
+- **Don't touch captureController's `captureStableFrame` for initial frame** — it needs stability check for the first baseline frame
+- **Don't remove auth system** — breaks screenshot saving functionality
+- **Don't attempt OCR worker caching** — previously tried, caused slower OCR
+
+### Build Notes
+- Always use `--dir` flag for unsigned dev builds
+- `webSecurity: false` is required for drag-and-drop file:// protocol support
+- `scrollhelper.swift` is still listed in `package.json` `asarUnpack` — should be removed when cleaning dead code
+
+### Performance
+- Gallery load (1000 screenshots): 3-5s
+- Folder switching (cached): <100ms
+- Memory usage: ~15MB + 50MB LRU cache
+- DOM nodes (1000 screenshots): ~600 (virtual scrolling)

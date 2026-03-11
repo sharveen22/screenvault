@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Copy, Share2, Pen, Type, Square, ArrowRight, Undo, Redo, Crop, Check, X, MousePointer2, Save, AlertTriangle } from 'lucide-react';
+import { Copy, Share2, Pen, Type, Square, ArrowRight, Undo, Redo, Crop, Check, X, MousePointer2, Save, AlertTriangle, ZoomIn, ZoomOut } from 'lucide-react';
 
 // --- Types ---
 type Tool = 'select' | 'pen' | 'text' | 'rect' | 'arrow' | 'crop' | null;
@@ -50,6 +50,15 @@ export function Editor() {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
 
+    // Zoom & Pan
+    const [zoom, setZoom] = useState(1);
+    const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+    const zoomRef = useRef(1);
+    const panOffsetRef = useRef({ x: 0, y: 0 });
+    const spaceHeld = useRef(false);
+    const isPanningEditor = useRef(false);
+    const panStartEditor = useRef({ x: 0, y: 0 });
+
     // --- Window Resize Handler ---
     useEffect(() => {
         const updateWidth = () => {
@@ -76,6 +85,65 @@ export function Editor() {
             window.removeEventListener('resize', updateWidth);
             resizeObserver?.disconnect();
         };
+    }, []);
+
+    // --- Zoom: Space key tracking ---
+    useEffect(() => {
+        const onKeyDown = (e: KeyboardEvent) => {
+            if (e.code === 'Space' && !e.repeat && !(e.target instanceof HTMLInputElement)) {
+                e.preventDefault();
+                spaceHeld.current = true;
+            }
+            if ((e.metaKey || e.ctrlKey) && e.key === '0') {
+                e.preventDefault();
+                zoomRef.current = 1;
+                panOffsetRef.current = { x: 0, y: 0 };
+                setZoom(1);
+                setPanOffset({ x: 0, y: 0 });
+            }
+            // Arrow keys to pan when zoomed
+            if (zoomRef.current > 1 && e.key.startsWith('Arrow')) {
+                e.preventDefault();
+                const step = e.shiftKey ? 100 : 40;
+                let dx = 0, dy = 0;
+                if (e.key === 'ArrowLeft') dx = step;
+                else if (e.key === 'ArrowRight') dx = -step;
+                else if (e.key === 'ArrowUp') dy = step;
+                else if (e.key === 'ArrowDown') dy = -step;
+                const newPan = { x: panOffsetRef.current.x + dx, y: panOffsetRef.current.y + dy };
+                panOffsetRef.current = newPan;
+                setPanOffset(newPan);
+            }
+        };
+        const onKeyUp = (e: KeyboardEvent) => {
+            if (e.code === 'Space') spaceHeld.current = false;
+        };
+        window.addEventListener('keydown', onKeyDown);
+        window.addEventListener('keyup', onKeyUp);
+        return () => {
+            window.removeEventListener('keydown', onKeyDown);
+            window.removeEventListener('keyup', onKeyUp);
+        };
+    }, []);
+
+    // --- Zoom: Wheel handler ---
+    useEffect(() => {
+        const el = containerRef.current;
+        if (!el) return;
+        const handler = (e: WheelEvent) => {
+            e.preventDefault();
+            const currentZoom = zoomRef.current;
+            const factor = e.deltaY > 0 ? 0.9 : 1.1;
+            const newZoom = Math.min(Math.max(currentZoom * factor, 0.5), 5);
+            zoomRef.current = newZoom;
+            setZoom(newZoom);
+            if (newZoom <= 1) {
+                panOffsetRef.current = { x: 0, y: 0 };
+                setPanOffset({ x: 0, y: 0 });
+            }
+        };
+        el.addEventListener('wheel', handler, { passive: false });
+        return () => el.removeEventListener('wheel', handler);
     }, []);
 
     // --- Init ---
@@ -328,6 +396,11 @@ export function Editor() {
     };
 
     const handleMouseDown = (e: React.MouseEvent) => {
+        if (spaceHeld.current) {
+            isPanningEditor.current = true;
+            panStartEditor.current = { x: e.clientX - panOffsetRef.current.x, y: e.clientY - panOffsetRef.current.y };
+            return;
+        }
         const pos = getPos(e);
         setDragStart(pos);
         setIsDragging(true);
@@ -341,6 +414,13 @@ export function Editor() {
                 }
             }
             setSelectedId(foundId);
+
+            // When zoomed and clicking empty canvas, pan instead
+            if (!foundId && zoomRef.current > 1) {
+                isPanningEditor.current = true;
+                panStartEditor.current = { x: e.clientX - panOffsetRef.current.x, y: e.clientY - panOffsetRef.current.y };
+                return;
+            }
 
             if (foundId) {
                 const ann = annotations.find(a => a.id === foundId);
@@ -377,6 +457,12 @@ export function Editor() {
     };
 
     const handleMouseMove = (e: React.MouseEvent) => {
+        if (isPanningEditor.current) {
+            const newPan = { x: e.clientX - panStartEditor.current.x, y: e.clientY - panStartEditor.current.y };
+            panOffsetRef.current = newPan;
+            setPanOffset(newPan);
+            return;
+        }
         if (!isDragging || !dragStart) return;
         const pos = getPos(e);
 
@@ -418,6 +504,10 @@ export function Editor() {
     };
 
     const handleMouseUp = () => {
+        if (isPanningEditor.current) {
+            isPanningEditor.current = false;
+            return;
+        }
         setIsDragging(false);
         if (currentAnnotation) {
             pushHistory([...annotations, currentAnnotation]);
@@ -652,8 +742,23 @@ export function Editor() {
                             </button>
                         )}
 
+                        <div className="flex items-center gap-0">
+                            <IconButton icon={<ZoomOut size={iconSize} />} onClick={() => { const z = Math.max(zoomRef.current * 0.8, 0.5); zoomRef.current = z; setZoom(z); }} title="Zoom Out" padding={buttonPadding} />
+                            <button
+                                onClick={() => { zoomRef.current = 1; panOffsetRef.current = { x: 0, y: 0 }; setZoom(1); setPanOffset({ x: 0, y: 0 }); }}
+                                className="text-xs rounded transition-colors"
+                                style={{ color: '#161419', opacity: 0.6, fontFamily: 'Inter, sans-serif', minWidth: '32px', textAlign: 'center', padding: '2px' }}
+                                title="Reset Zoom (Cmd+0)"
+                                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#c4c1bf'; e.currentTarget.style.opacity = '1'; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.opacity = '0.6'; }}
+                            >
+                                {Math.round(zoom * 100)}%
+                            </button>
+                            <IconButton icon={<ZoomIn size={iconSize} />} onClick={() => { const z = Math.min(zoomRef.current * 1.25, 5); zoomRef.current = z; setZoom(z); }} title="Zoom In" padding={buttonPadding} />
+                        </div>
+
                         <div className={`w-px ${dividerHeight} flex-shrink-0`} style={{ backgroundColor: '#b0adab' }} />
-                        
+
                         <div className="flex items-center gap-0">
                             <IconButton icon={<Copy size={iconSize} />} onClick={handleCopy} title="Copy" padding={buttonPadding} />
                             {!isTiny && <IconButton icon={<Share2 size={iconSize} />} onClick={handleShare} title="Share" padding={buttonPadding} />}
@@ -676,7 +781,7 @@ export function Editor() {
                 onMouseUp={handleMouseUp}
                 onClick={handleCanvasClick}
             >
-                <div className="relative shadow-2xl" style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div className="relative shadow-2xl" style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoom})`, transformOrigin: 'center center' }}>
                     <canvas
                         ref={canvasRef}
                         className="block rounded-sm bg-transparent"

@@ -123,6 +123,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('ocr:complete', handler);
   },
   
+  // Scrolling Screenshot
+  scrollingCapture: {
+    capture: () => ipcRenderer.invoke('scrolling-screenshot'),
+    onProgress: (callback) => {
+      const handler = (_evt, data) => callback(data);
+      ipcRenderer.on('scrolling-capture:progress', handler);
+      return () => ipcRenderer.removeListener('scrolling-capture:progress', handler);
+    },
+  },
+
   // Import APIs
   import: {
     files: () => ipcRenderer.invoke('import:files'),

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Virtuoso } from 'react-virtuoso';
 import { db, Screenshot } from '../lib/database';
-import { Star, FolderOpen, Trash2, Image as ImageIcon, Loader2 } from 'lucide-react';
+import { Star, FolderOpen, Trash2, Image as ImageIcon, Loader2, ScanLine } from 'lucide-react';
 import { ScreenshotModal } from './ScreenshotModal';
 
 interface GalleryProps {
@@ -624,6 +624,12 @@ function ScreenshotCard({
         <div className="absolute top-2 left-2 flex items-center gap-1 bg-[#161419] text-[#e9e6e4] px-2 py-1 rounded-md text-[10px] shadow-md">
           <Loader2 className="w-2.5 h-2.5 animate-spin" />
           <span>Processing</span>
+        </div>
+      )}
+
+      {screenshot.source === 'scrolling-capture' && !isLikelyProcessing && !screenshot.is_favorite && (
+        <div className="absolute top-2 left-2 bg-[#4F46E5]/90 text-white rounded-full p-1 shadow-md" title="Scrolling capture">
+          <ScanLine className="w-3 h-3" />
         </div>
       )}
 

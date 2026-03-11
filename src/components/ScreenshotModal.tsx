@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Screenshot, db } from '../lib/database';
 import {
   X,
@@ -11,6 +11,9 @@ import {
   Trash2,
   Image as ImageIcon,
   Plus,
+  Copy,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react';
 
 interface ScreenshotModalProps {
@@ -28,6 +31,15 @@ export function ScreenshotModal({ screenshot, onClose, onUpdate, onFavoriteToggl
   const [newNote, setNewNote] = useState('');
   const [noteHistory, setNoteHistory] = useState<Array<{ text: string; timestamp: string }>>(screenshot.note_history || []);
 
+  // Zoom & Pan
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
+  const zoomRef = useRef(1);
+  const panRef = useRef({ x: 0, y: 0 });
+  const panStartRef = useRef({ x: 0, y: 0 });
+  const imageContainerRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     loadImage();
   }, [screenshot.storage_path]);
@@ -41,19 +53,116 @@ export function ScreenshotModal({ screenshot, onClose, onUpdate, onFavoriteToggl
     setNoteHistory(screenshot.note_history || []);
   }, [screenshot.note_history]);
 
-  // Handle Escape key to close modal
+  // Handle keyboard shortcuts
   useEffect(() => {
-    const handleEscapeKey = (event: KeyboardEvent) => {
+    const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         onClose();
+        return;
+      }
+      // Arrow keys to pan when zoomed
+      if (zoomRef.current > 1) {
+        const step = event.shiftKey ? 100 : 40;
+        let dx = 0, dy = 0;
+        if (event.key === 'ArrowLeft') dx = step;
+        else if (event.key === 'ArrowRight') dx = -step;
+        else if (event.key === 'ArrowUp') dy = step;
+        else if (event.key === 'ArrowDown') dy = -step;
+        if (dx || dy) {
+          event.preventDefault();
+          const newPan = { x: panRef.current.x + dx, y: panRef.current.y + dy };
+          panRef.current = newPan;
+          setPan(newPan);
+        }
       }
     };
 
-    document.addEventListener('keydown', handleEscapeKey);
+    document.addEventListener('keydown', handleKeyDown);
     return () => {
-      document.removeEventListener('keydown', handleEscapeKey);
+      document.removeEventListener('keydown', handleKeyDown);
     };
   }, [onClose]);
+
+  // Wheel zoom (native listener for passive: false)
+  useEffect(() => {
+    const el = imageContainerRef.current;
+    if (!el) return;
+    const handler = (e: WheelEvent) => {
+      e.preventDefault();
+      const currentZoom = zoomRef.current;
+      const currentPan = panRef.current;
+      const factor = e.deltaY > 0 ? 0.9 : 1.1;
+      const newZoom = Math.min(Math.max(currentZoom * factor, 1), 8);
+      if (newZoom <= 1) {
+        zoomRef.current = 1;
+        panRef.current = { x: 0, y: 0 };
+        setZoom(1);
+        setPan({ x: 0, y: 0 });
+        return;
+      }
+      const rect = el.getBoundingClientRect();
+      const cx = e.clientX - rect.left - rect.width / 2;
+      const cy = e.clientY - rect.top - rect.height / 2;
+      const scale = newZoom / currentZoom;
+      const newPan = {
+        x: cx - (cx - currentPan.x) * scale,
+        y: cy - (cy - currentPan.y) * scale,
+      };
+      zoomRef.current = newZoom;
+      panRef.current = newPan;
+      setZoom(newZoom);
+      setPan(newPan);
+    };
+    el.addEventListener('wheel', handler, { passive: false });
+    return () => el.removeEventListener('wheel', handler);
+  }, []);
+
+  const resetZoom = () => {
+    zoomRef.current = 1;
+    panRef.current = { x: 0, y: 0 };
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  };
+
+  const handleImageMouseDown = (e: React.MouseEvent) => {
+    if (zoomRef.current > 1) {
+      e.preventDefault();
+      setIsPanning(true);
+      panStartRef.current = { x: e.clientX - panRef.current.x, y: e.clientY - panRef.current.y };
+    }
+  };
+
+  const handleImageMouseMove = (e: React.MouseEvent) => {
+    if (isPanning) {
+      const newPan = { x: e.clientX - panStartRef.current.x, y: e.clientY - panStartRef.current.y };
+      panRef.current = newPan;
+      setPan(newPan);
+    }
+  };
+
+  const handleImageMouseUp = () => setIsPanning(false);
+
+  const handleCopy = () => {
+    if (imageUrl) {
+      window.electronAPI?.copyData(imageUrl);
+    }
+  };
+
+  const zoomIn = () => {
+    const newZoom = Math.min(zoomRef.current * 1.25, 8);
+    zoomRef.current = newZoom;
+    setZoom(newZoom);
+  };
+
+  const zoomOut = () => {
+    const newZoom = Math.max(zoomRef.current * 0.8, 1);
+    zoomRef.current = newZoom;
+    if (newZoom <= 1) {
+      panRef.current = { x: 0, y: 0 };
+      setPan({ x: 0, y: 0 });
+    }
+    setZoom(newZoom);
+  };
 
   const loadImage = async () => {
     setImageLoading(true);
@@ -203,7 +312,42 @@ export function ScreenshotModal({ screenshot, onClose, onUpdate, onFavoriteToggl
           <h2 className="text-xl font-bold text-[#161419] truncate flex-1 pr-4 title-font">
             {screenshot.file_name}
           </h2>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
+            {/* Zoom Controls */}
+            <button
+              onClick={zoomOut}
+              className="p-2 hover:bg-[#161419] hover:text-[#e9e6e4] rounded-lg transition-all hover:scale-110 text-[#161419] hover:shadow-md"
+              title="Zoom Out"
+            >
+              <ZoomOut className="w-5 h-5" />
+            </button>
+            <button
+              onClick={resetZoom}
+              className="px-1.5 py-1 hover:bg-[#161419] hover:text-[#e9e6e4] rounded-lg transition-all text-[#161419] hover:shadow-md text-xs font-medium subtitle-font min-w-[40px] text-center"
+              title="Reset Zoom"
+            >
+              {Math.round(zoom * 100)}%
+            </button>
+            <button
+              onClick={zoomIn}
+              className="p-2 hover:bg-[#161419] hover:text-[#e9e6e4] rounded-lg transition-all hover:scale-110 text-[#161419] hover:shadow-md"
+              title="Zoom In"
+            >
+              <ZoomIn className="w-5 h-5" />
+            </button>
+
+            <div className="w-px h-5 bg-[#94918f] mx-1" />
+
+            {/* Copy */}
+            <button
+              onClick={handleCopy}
+              className="p-2 hover:bg-[#161419] hover:text-[#e9e6e4] rounded-lg transition-all hover:scale-110 text-[#161419] hover:shadow-md"
+              title="Copy to Clipboard"
+            >
+              <Copy className="w-5 h-5" />
+            </button>
+
+            {/* Favorite */}
             <button
               onClick={toggleFavorite}
               className="p-2 hover:bg-[#161419] hover:text-[#e9e6e4] rounded-lg transition-all hover:scale-110 border border-transparent hover:border-[#161419] hover:shadow-md"
@@ -243,18 +387,44 @@ export function ScreenshotModal({ screenshot, onClose, onUpdate, onFavoriteToggl
         </div>
 
         <div className="flex-1 overflow-hidden flex">
-          <div className="flex-1 bg-[#dcd9d7] flex items-center justify-center p-6 overflow-auto">
+          <div
+            ref={imageContainerRef}
+            className="flex-1 bg-[#dcd9d7] flex items-center justify-center p-6 overflow-hidden relative"
+            onMouseDown={handleImageMouseDown}
+            onMouseMove={handleImageMouseMove}
+            onMouseUp={handleImageMouseUp}
+            onMouseLeave={handleImageMouseUp}
+            onDoubleClick={resetZoom}
+            style={{ cursor: zoom > 1 ? (isPanning ? 'grabbing' : 'grab') : 'default' }}
+          >
             {imageUrl ? (
               <img
                 src={imageUrl}
                 alt={screenshot.file_name}
-                className="w-full h-full object-contain shadow-xl"
-                style={{ maxWidth: '100%', maxHeight: '100%' }}
+                className="shadow-xl"
+                style={{
+                  maxWidth: '100%',
+                  maxHeight: '100%',
+                  objectFit: 'contain' as const,
+                  transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                  transition: isPanning ? 'none' : 'transform 0.15s ease-out',
+                  userSelect: 'none' as const,
+                  pointerEvents: 'none' as const,
+                }}
+                draggable={false}
               />
             ) : (
               <div className="flex flex-col items-center justify-center">
                 <ImageIcon className="w-16 h-16 text-[#94918f] mb-4" />
                 <p className="text-[#161419] opacity-50 subtitle-font">Loading image...</p>
+              </div>
+            )}
+            {zoom > 1 && (
+              <div
+                className="absolute bottom-3 left-3 px-2 py-1 rounded-md text-xs font-medium subtitle-font select-none"
+                style={{ backgroundColor: 'rgba(22, 20, 25, 0.7)', color: '#e9e6e4' }}
+              >
+                {Math.round(zoom * 100)}%
               </div>
             )}
           </div>

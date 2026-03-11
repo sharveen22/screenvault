@@ -16,7 +16,8 @@ const {
 
 const path = require('path');
 const fs = require('fs');
-const { spawn, spawnSync } = require('child_process');
+const { spawn, spawnSync, execFile } = require('child_process');
+const os = require('os');
 const crypto = require('crypto');
 const Tesseract = require('tesseract.js');
 app.setAppUserModelId('com.screenvault.app.taufiq');
@@ -33,6 +34,15 @@ process.on('uncaughtException', (error) => {
 });
 
 const { initDatabase, getDatabase, closeDatabase } = require('./database');
+
+// Lazy-loaded: scrollCapture modules are loaded on first use to keep startup fast.
+let _scrollCaptureModule = null;
+function getScrollCaptureModule() {
+  if (!_scrollCaptureModule) {
+    _scrollCaptureModule = require('./scrollCapture/captureController');
+  }
+  return _scrollCaptureModule;
+}
 
 let mainWindow;
 let tray;
@@ -117,12 +127,14 @@ class LRUCache {
 const fileCache = new LRUCache(50 * 1024 * 1024); // 50MB
 
 /* ====================== LOG helper ====================== */
+const _logFile = path.join(os.homedir(), 'screenvault_debug.log');
 function sendLog(msg, level = 'info') {
   const payload = { ts: new Date().toISOString(), level, msg };
   try {
+    const line = `[${payload.ts}] ${level.toUpperCase()} ${msg}\n`;
+    fs.appendFileSync(_logFile, line);
     if (level === 'error') console.error('[ScreenVault]', payload.ts, level.toUpperCase(), msg);
     else console.log('[ScreenVault]', payload.ts, level.toUpperCase(), msg);
-    // Only send to renderer if window exists and is not destroyed
     try {
       if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
         mainWindow.webContents.send('shot:log', payload);
@@ -324,6 +336,7 @@ function createTray() {
     }},
     { label: 'Take Screenshot (Cmd+Shift+S)', click: () => takeScreenshotSystem() },
     { label: 'Take Fullscreen Screenshot (Cmd+Shift+D)', click: () => takeFullscreenScreenshot() },
+    { label: 'Scrolling Screenshot (Cmd+Shift+W)', click: () => takeScrollingScreenshot() },
     { type: 'separator' },
     { label: 'Open Screen Recording Settings (macOS)', click: () => openMacScreenSettings() },
     { type: 'separator' },
@@ -472,7 +485,14 @@ function createThumbnailPreview(filePath) {
   });
 
   // Create simple HTML for thumbnail with click handler
-  const img = nativeImage.createFromPath(filePath);
+  // Resize large images to fit the thumbnail — full-page screenshots can be 10MB+
+  // which makes the data URL too large for BrowserWindow to handle
+  let img = nativeImage.createFromPath(filePath);
+  const size = img.getSize();
+  if (size.width > 400 || size.height > 400) {
+    const scale = Math.min(400 / size.width, 400 / size.height);
+    img = img.resize({ width: Math.round(size.width * scale), height: Math.round(size.height * scale) });
+  }
   const dataUrl = img.toDataURL();
   
   const html = `
@@ -661,7 +681,7 @@ function handleThumbnailClick(filePath) {
 }
 
 // Save screenshot directly to database
-function saveScreenshotToDatabase(filePath) {
+function saveScreenshotToDatabase(filePath, source = 'desktop') {
   console.log(`[SaveDB] Saving screenshot: ${filePath}`);
   
   try {
@@ -704,7 +724,7 @@ function saveScreenshotToDatabase(filePath) {
       size.width || 0,
       size.height || 0,
       filePath,
-      'desktop',
+      source,
       '',           // ocr_text
       null,         // ocr_confidence
       '[]',         // custom_tags
@@ -1671,6 +1691,418 @@ function linuxCaptureFile() {
   });
 }
 
+/* ====================== Scrolling Screenshot ====================== */
+// Scroll capture pipeline is in ./scrollCapture/ modules.
+// Old helpers (ensureScrollHelper, execScrollHelper, execContinuousScroll,
+// captureRegion, findOverlap, stitchImages, etc.) have been replaced.
+
+// Show progress floating window during scrolling capture
+let scrollCaptureProgressWin = null;
+
+
+// Show a visual border around the capture region (positioned OUTSIDE the capture rect)
+function showCaptureBorder(region) {
+  const borderSize = 3;
+  const color = '#000000';
+  const wins = [];
+
+  const makeBorderWin = (x, y, w, h) => {
+    const win = new BrowserWindow({
+      x, y, width: Math.max(w, 1), height: Math.max(h, 1),
+      frame: false, transparent: true, alwaysOnTop: true,
+      resizable: false, movable: false, skipTaskbar: true,
+      hasShadow: false, focusable: false,
+      webPreferences: { contextIsolation: true, nodeIntegration: false }
+    });
+    win.setIgnoreMouseEvents(true);
+    win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(
+      `<!DOCTYPE html><html><body style="margin:0;background:${color};"></body></html>`
+    ));
+    win.showInactive();
+    return win;
+  };
+
+  // Top border
+  wins.push(makeBorderWin(region.x - borderSize, region.y - borderSize, region.width + borderSize * 2, borderSize));
+  // Bottom border
+  wins.push(makeBorderWin(region.x - borderSize, region.y + region.height, region.width + borderSize * 2, borderSize));
+  // Left border
+  wins.push(makeBorderWin(region.x - borderSize, region.y, borderSize, region.height));
+  // Right border
+  wins.push(makeBorderWin(region.x + region.width, region.y, borderSize, region.height));
+
+  // Tooltip above capture region
+  const tooltipWidth = 280;
+  const tooltipHeight = 36;
+  const tooltipX = Math.round(region.x + (region.width - tooltipWidth) / 2);
+  const tooltipY = region.y - borderSize - tooltipHeight - 8;
+  const tooltipWin = new BrowserWindow({
+    x: tooltipX, y: tooltipY, width: tooltipWidth, height: tooltipHeight,
+    frame: false, transparent: true, alwaysOnTop: true,
+    resizable: false, movable: false, skipTaskbar: true,
+    hasShadow: false, focusable: false,
+    webPreferences: { contextIsolation: true, nodeIntegration: false }
+  });
+  tooltipWin.setIgnoreMouseEvents(true);
+  tooltipWin.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(
+    `<!DOCTYPE html><html><head>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+      * { margin: 0; padding: 0; }
+      body { background: transparent; display: flex; justify-content: center; align-items: center; height: 100vh; }
+      .tip {
+        background: linear-gradient(135deg, #2a2730 0%, #161419 100%);
+        color: #e9e6e4; padding: 8px 18px; border-radius: 8px;
+        font-family: "Space Grotesk", -apple-system, sans-serif;
+        font-size: 12px; font-weight: 500; letter-spacing: 0.01em;
+        border: 1px solid rgba(233,230,228,0.08);
+        box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+        white-space: nowrap;
+      }
+    </style></head><body>
+    <div class="tip">Scroll slowly for best results</div>
+    </body></html>`
+  ));
+  tooltipWin.showInactive();
+  wins.push(tooltipWin);
+
+  return wins;
+}
+
+function showScrollCaptureProgress(captureRegion) {
+  if (scrollCaptureProgressWin && !scrollCaptureProgressWin.isDestroyed()) {
+    scrollCaptureProgressWin.close();
+  }
+
+  const { screen } = require('electron');
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
+
+  const winWidth = 260;
+  const winHeight = 80;
+  const padding = 10;
+
+  // Position progress window at bottom-left of screen, outside capture region
+  let posX = padding;
+  let posY = screenHeight - winHeight - padding;
+
+  if (captureRegion) {
+    const cr = captureRegion;
+    const crBottom = cr.y + cr.height;
+
+    // If bottom-left overlaps capture region, try below capture region
+    if (posY < crBottom && posX < cr.x + cr.width && posX + winWidth > cr.x) {
+      if (crBottom + padding + winHeight <= screenHeight) {
+        posY = crBottom + padding;
+      } else if (cr.y - padding - winHeight >= 0) {
+        posY = cr.y - padding - winHeight;
+      }
+    }
+  }
+
+  scrollCaptureProgressWin = new BrowserWindow({
+    width: winWidth,
+    height: winHeight,
+    x: posX,
+    y: posY,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    resizable: false,
+    movable: false,
+    skipTaskbar: true,
+    hasShadow: true,
+    show: false,
+    focusable: true,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      preload: path.join(__dirname, 'preload-overlay.js'),
+    }
+  });
+
+  const html = `<!DOCTYPE html><html><head>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: transparent; }
+    .container {
+      background: linear-gradient(135deg, #2a2730 0%, #161419 100%);
+      border-radius: 12px;
+      padding: 14px 18px;
+      color: #e9e6e4;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 8px;
+      backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(233,230,228,0.08);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3), 0 2px 8px rgba(0,0,0,0.2);
+    }
+    .title {
+      font-size: 13px; font-weight: 500; display: flex; align-items: center; gap: 8px;
+      font-family: "Space Grotesk", -apple-system, sans-serif; letter-spacing: 0.01em;
+    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #e9e6e4; animation: pulse 1s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+    .row { display: flex; align-items: center; justify-content: space-between; }
+    .subtitle {
+      font-size: 11px; opacity: 0.5;
+      font-family: "Inter", -apple-system, sans-serif;
+    }
+    .done-btn {
+      background: rgba(233,230,228,0.12); color: #e9e6e4; border: 1px solid rgba(233,230,228,0.15);
+      border-radius: 6px; padding: 4px 14px; font-size: 12px; font-weight: 500; cursor: pointer;
+      font-family: "Space Grotesk", -apple-system, sans-serif; letter-spacing: 0.01em;
+    }
+    .done-btn:hover { background: rgba(233,230,228,0.2); }
+  </style></head><body>
+    <div class="container">
+      <div class="title"><div class="dot"></div><span id="status-text">Capturing</span></div>
+      <div class="row">
+        <span class="subtitle"><kbd style="background:rgba(233,230,228,0.1);border:1px solid rgba(233,230,228,0.15);border-radius:4px;padding:1px 5px;font-family:Inter,-apple-system,sans-serif;font-size:10px;">Esc</kbd> to cancel</span>
+        <button class="done-btn" id="done-btn">Done</button>
+      </div>
+    </div>
+    <script>
+      document.getElementById('done-btn').addEventListener('click', () => {
+        window.overlay.sendRegion(0, 0, 0, 0);
+      });
+    </script>
+  </body></html>`;
+
+  // Write to temp file so preload works
+  const tmpProgressHtml = path.join(os.tmpdir(), 'sv_progress_overlay.html');
+  fs.writeFileSync(tmpProgressHtml, html);
+  scrollCaptureProgressWin.loadFile(tmpProgressHtml);
+
+  scrollCaptureProgressWin.once('ready-to-show', () => {
+    if (scrollCaptureProgressWin && !scrollCaptureProgressWin.isDestroyed()) {
+      scrollCaptureProgressWin.showInactive();
+    }
+  });
+
+  // Done/Escape handlers are registered by captureController.js
+  return scrollCaptureProgressWin;
+}
+
+function updateProgressWindow(progressWin, _segmentIndex) {
+  // Progress updates are silent — UI just shows "Capturing" or "Compiling"
+}
+
+// Show region selection overlay
+function showRegionSelector() {
+  return new Promise((resolve) => {
+    const { screen } = require('electron');
+    const displays = screen.getAllDisplays();
+
+    // Cover all displays
+    const minX = Math.min(...displays.map(d => d.bounds.x));
+    const minY = Math.min(...displays.map(d => d.bounds.y));
+    const maxX = Math.max(...displays.map(d => d.bounds.x + d.bounds.width));
+    const maxY = Math.max(...displays.map(d => d.bounds.y + d.bounds.height));
+
+    const preloadPath = path.join(__dirname, 'preload-overlay.js');
+    sendLog(`Region selector: preload path = ${preloadPath}, exists = ${fs.existsSync(preloadPath)}`);
+
+    const overlayWin = new BrowserWindow({
+      x: minX,
+      y: minY,
+      width: maxX - minX,
+      height: maxY - minY,
+      transparent: true,
+      frame: false,
+      alwaysOnTop: true,
+      fullscreenable: true,
+      resizable: false,
+      movable: false,
+      skipTaskbar: true,
+      hasShadow: false,
+      focusable: true,
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+        preload: preloadPath,
+      }
+    });
+
+    // Make it truly fullscreen on macOS
+    overlayWin.setVisibleOnAllWorkspaces(true);
+
+    const html = `<!DOCTYPE html><html><head>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 100%; height: 100%; overflow: hidden; cursor: crosshair; user-select: none; -webkit-user-select: none; }
+      body { background: transparent; position: relative; }
+      .instruction {
+        position: fixed; top: 40px; left: 50%; transform: translateX(-50%);
+        background: linear-gradient(135deg, #2a2730 0%, #161419 100%);
+        color: #e9e6e4; padding: 14px 28px;
+        border-radius: 12px; font-family: "Space Grotesk", -apple-system, sans-serif;
+        font-size: 14px; font-weight: 500; letter-spacing: 0.01em;
+        backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+        border: 1px solid rgba(233,230,228,0.08); z-index: 100;
+        pointer-events: none;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.3), 0 2px 8px rgba(0,0,0,0.2);
+      }
+      .instruction kbd {
+        display: inline-block; background: rgba(233,230,228,0.1);
+        border: 1px solid rgba(233,230,228,0.15); border-radius: 5px;
+        padding: 2px 7px; font-family: "Inter", -apple-system, sans-serif;
+        font-size: 12px; font-weight: 500; margin-left: 2px;
+      }
+      .selection {
+        position: absolute; border: 2px solid #000000; background: transparent;
+        pointer-events: none; display: none; z-index: 50;
+      }
+    </style></head><body>
+      <div class="instruction">Click and drag to select the scrollable area. Press <kbd>Esc</kbd> to cancel.</div>
+      <div class="selection" id="sel"></div>
+      <script>
+        const sel = document.getElementById('sel');
+        let startX = 0, startY = 0, dragging = false;
+
+        document.addEventListener('mousedown', (e) => {
+          startX = e.clientX; startY = e.clientY; dragging = true;
+          sel.style.display = 'block';
+          sel.style.left = startX + 'px'; sel.style.top = startY + 'px';
+          sel.style.width = '0px'; sel.style.height = '0px';
+        });
+
+        document.addEventListener('mousemove', (e) => {
+          if (!dragging) return;
+          const x = Math.min(e.clientX, startX);
+          const y = Math.min(e.clientY, startY);
+          const w = Math.abs(e.clientX - startX);
+          const h = Math.abs(e.clientY - startY);
+          sel.style.left = x + 'px'; sel.style.top = y + 'px';
+          sel.style.width = w + 'px'; sel.style.height = h + 'px';
+        });
+
+        document.addEventListener('mouseup', (e) => {
+          if (!dragging) return;
+          dragging = false;
+          const x = Math.min(e.clientX, startX);
+          const y = Math.min(e.clientY, startY);
+          const w = Math.abs(e.clientX - startX);
+          const h = Math.abs(e.clientY - startY);
+          if (w > 10 && h > 10) {
+            window.overlay.sendRegion(x, y, w, h);
+          }
+        });
+
+        document.addEventListener('keydown', (e) => {
+          if (e.key === 'Escape') {
+            window.overlay.cancel();
+          }
+        });
+      </script>
+    </body></html>`;
+
+    // Write HTML to temp file so preload script works (data: URLs don't run preloads)
+    const tmpHtmlPath = path.join(os.tmpdir(), 'sv_region_overlay.html');
+    fs.writeFileSync(tmpHtmlPath, html);
+    overlayWin.loadFile(tmpHtmlPath);
+
+    let resolved = false;
+    const cleanup = () => {
+      ipcMain.removeAllListeners('region-selected');
+      ipcMain.removeAllListeners('region-cancelled');
+      try { fs.unlinkSync(tmpHtmlPath); } catch {}
+    };
+
+    ipcMain.once('region-selected', (_event, { x, y, w, h }) => {
+      if (resolved) return;
+      resolved = true;
+
+      // Convert window-relative coords to screen coords
+      const contentBounds = overlayWin.getContentBounds();
+      const screenX = x + contentBounds.x;
+      const screenY = y + contentBounds.y;
+
+      cleanup();
+      overlayWin.close();
+
+      const primaryDisplay = screen.getPrimaryDisplay();
+      const scaleFactor = primaryDisplay.scaleFactor;
+
+      sendLog(`Region selected: x=${screenX} y=${screenY} w=${w} h=${h} scale=${scaleFactor} (offset: +${contentBounds.x},+${contentBounds.y})`);
+      resolve({ x: screenX, y: screenY, width: w, height: h, scaleFactor });
+    });
+
+    ipcMain.once('region-cancelled', () => {
+      if (resolved) return;
+      resolved = true;
+      cleanup();
+      overlayWin.close();
+      resolve(null);
+    });
+
+    overlayWin.on('closed', () => {
+      if (resolved) return;
+      resolved = true;
+      cleanup();
+      resolve(null);
+    });
+
+    overlayWin.once('ready-to-show', () => {
+      overlayWin.show();
+      overlayWin.focus();
+    });
+  });
+}
+// Main scrolling screenshot orchestrator — auto-detects Chromium browsers for CDP capture,
+// falls back to scroll-capture pipeline for everything else.
+async function takeScrollingScreenshot() {
+  // Try browser-aware CDP capture for Chromium browsers
+  try {
+    const { getFrontmostApp, isChromiumBrowser, getActiveTabURL } = require('./scrollCapture/browserDetect');
+
+    const frontApp = await getFrontmostApp();
+    if (frontApp && isChromiumBrowser(frontApp.bundleId)) {
+      sendLog(`Detected Chromium browser: ${frontApp.name} (${frontApp.bundleId})`);
+
+      const url = await getActiveTabURL(frontApp.bundleId);
+      if (url) {
+        sendLog(`Browser capture: URL = ${url}`);
+        const { captureBrowserPage } = require('./scrollCapture/browserCapture');
+        const result = await captureBrowserPage(url, {
+          sendLog,
+          saveBufferToFile,
+          saveScreenshotToDatabase,
+          createThumbnailPreview,
+          getMainWindow: () => mainWindow,
+          getIsCapturing: () => isCapturing,
+          setIsCapturing: (v) => { isCapturing = v; },
+        });
+
+        if (result && result.success) return;
+        sendLog('Browser capture failed, falling back to scroll capture', 'warn');
+      }
+    }
+  } catch (err) {
+    sendLog(`Browser detection error: ${err.message}, falling back to scroll capture`, 'warn');
+  }
+
+  // Fallback: existing scroll-capture pipeline
+  const { takeScrollingScreenshot: impl } = getScrollCaptureModule();
+  return impl({
+    sendLog,
+    showRegionSelector,
+    showScrollCaptureProgress,
+    updateProgressWindow,
+    showCaptureBorder,
+    saveBufferToFile,
+    saveScreenshotToDatabase,
+    createThumbnailPreview,
+    getMainWindow: () => mainWindow,
+    getIsCapturing: () => isCapturing,
+    setIsCapturing: (v) => { isCapturing = v; }
+  });
+}
+
 /* ====================== Shortcuts & lifecycle ====================== */
 function registerGlobalShortcuts() {
   const ok1 = globalShortcut.register('CommandOrControl+Shift+S', () => takeScreenshotSystem());
@@ -1681,10 +2113,12 @@ function registerGlobalShortcuts() {
     }
   });
   const ok3 = globalShortcut.register('CommandOrControl+Shift+D', () => takeFullscreenScreenshot());
+  const ok4 = globalShortcut.register('CommandOrControl+Shift+W', () => takeScrollingScreenshot());
 
   if (!ok1) sendLog('Failed to register screenshot shortcut', 'error');
   if (!ok2) sendLog('Failed to register show app shortcut', 'error');
   if (!ok3) sendLog('Failed to register fullscreen screenshot shortcut', 'error');
+  if (!ok4) sendLog('Failed to register scrolling screenshot shortcut', 'error');
   sendLog('Global shortcuts registered');
 }
 
@@ -1778,8 +2212,12 @@ app.whenReady().then(async () => {
 
 });
 
-// Handle app quit properly
-app.on('before-quit', () => {
+// Handle app quit properly — block quit during capture
+app.on('before-quit', (event) => {
+  if (isCapturing) {
+    event.preventDefault();
+    return;
+  }
   isQuitting = true;
 });
 
@@ -1792,6 +2230,7 @@ app.on('will-quit', () => {
 
 /* ====================== IPC ====================== */
 ipcMain.handle('take-screenshot', async () => { await takeScreenshotSystem(); });
+ipcMain.handle('scrolling-screenshot', async () => { await takeScrollingScreenshot(); });
 
 ipcMain.handle('auth:sign-up', async (_e, { email, password }) => {
   try {

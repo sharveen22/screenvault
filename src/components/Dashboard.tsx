@@ -289,6 +289,7 @@ export function Dashboard() {
               <FolderOpen size={16} />
               <span className="text-sm">Open Folder</span>
             </button>
+
           </div>
         </div>
 
@@ -346,6 +347,10 @@ export function Dashboard() {
             <div className="flex items-center gap-2">
               <span className="font-medium">Fullscreen Capture:</span>
               <kbd className="px-2 py-1 bg-[#161419] text-[#e9e6e4] rounded text-[10px] font-mono">Cmd+Shift+D</kbd>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="font-medium">Scroll Capture:</span>
+              <kbd className="px-2 py-1 bg-[#161419] text-[#e9e6e4] rounded text-[10px] font-mono">Cmd+Shift+W</kbd>
             </div>
             <div className="flex items-center gap-2">
               <span className="font-medium">Open App:</span>
